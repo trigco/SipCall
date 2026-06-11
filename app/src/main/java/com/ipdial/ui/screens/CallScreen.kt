@@ -36,7 +36,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
     val contacts by vm.contacts.collectAsState()
     
     val account = accounts.firstOrNull { it.id == session.accountId }
-    val simLabel = account?.label?.ifBlank { account.domain } ?: ""
+    val simLabel = account?.displayName ?: ""
 
     // Contact matching logic
     val contact = remember(session.remoteUri, contacts) {
@@ -82,7 +82,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             // Via label
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = "Calling via $simLabel",
+                    text = simLabel,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

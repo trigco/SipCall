@@ -133,21 +133,21 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
         // Swipe to Answer/Decline Slider
         var offsetX by remember { mutableStateOf(0f) }
         val density = LocalDensity.current
-        val dragRange = with(density) { 100.dp.toPx() }
+        val dragRange = with(density) { 110.dp.toPx() }
         val swipeThreshold = dragRange * 0.7f
 
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 80.dp),
+                .padding(bottom = 150.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // The "Pill" Track
             Box(
                 modifier = Modifier
                     .width(320.dp)
-                    .height(96.dp)
-                    .clip(RoundedCornerShape(48.dp))
+                    .height(80.dp)
+                    .clip(RoundedCornerShape(40.dp))
                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
                 contentAlignment = Alignment.Center
             ) {
@@ -176,7 +176,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                     modifier = Modifier
                         .offset { IntOffset(offsetX.roundToInt(), 0) }
                         .shadow(elevation = 8.dp, shape = CircleShape)
-                        .size(80.dp)
+                        .size(96.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface)
                         .draggable(
@@ -196,15 +196,13 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                 ) {
                     Icon(
                         imageVector = when {
-                            offsetX > 40 -> Icons.Default.Call
                             offsetX < -40 -> Icons.Default.CallEnd
-                            else -> Icons.Default.SwapHoriz
+                            else -> Icons.Default.Call
                         },
                         contentDescription = null,
                         tint = when {
-                            offsetX > 40 -> ForestGreen
                             offsetX < -40 -> EndRed
-                            else -> MaterialTheme.colorScheme.primary
+                            else -> ForestGreen
                         },
                         modifier = Modifier.size(36.dp)
                     )
