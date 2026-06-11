@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <files-path name="recordings" path="recordings/" />
+    <external-files-path name="external_music" path="Music/" />
     <external-files-path name="external_files" path="." />
     <external-path name="external_docs" path="Documents/IPCall" />
     <external-path name="external_root" path="." />

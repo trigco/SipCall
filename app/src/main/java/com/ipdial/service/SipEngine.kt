@@ -496,6 +496,12 @@ object SipEngine {
                     callMap.remove(currentCallId)
                     _callSession.value = null
                     
+                    // CRITICAL: Ensure recorder is finalized so the WAV header is correctly written!
+                    try {
+                        recorder?.delete()
+                        recorder = null
+                    } catch (e: Throwable) {}
+                    
                     SipConnectionService.getConnection(currentCallId)?.let { conn ->
                         conn.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.REMOTE))
                         conn.destroy()
