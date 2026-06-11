@@ -2,6 +2,7 @@ package com.ipdial.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -16,6 +17,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,6 +31,23 @@ import com.ipdial.ui.IPDialTopBar
 fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val accounts by vm.accounts.collectAsState()
+
+    val appIconBitmap = remember(context) {
+        try {
+            val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
+            if (drawable != null) {
+                val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 200
+                val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 200
+                val bitmap = android.graphics.Bitmap.createBitmap(width, height, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bitmap)
+                drawable.setBounds(0, 0, width, height)
+                drawable.draw(canvas)
+                bitmap.asImageBitmap()
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -44,12 +63,20 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Top
         ) {
-            Icon(
-                painter = painterResource(id = R.mipmap.ic_launcher),
-                contentDescription = "App Icon",
-                modifier = Modifier.size(100.dp),
-                tint = Color.Unspecified
-            )
+            if (appIconBitmap != null) {
+                Image(
+                    bitmap = appIconBitmap,
+                    contentDescription = "App Icon",
+                    modifier = Modifier.size(100.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = "App Icon",
+                    modifier = Modifier.size(100.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
             Spacer(Modifier.height(24.dp))
             Text(
                 text = "IPDial",
