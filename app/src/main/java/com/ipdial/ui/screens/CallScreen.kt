@@ -173,17 +173,30 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .padding(bottom = 48.dp)
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(36.dp))
+                    .width(160.dp)
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(28.dp))
                     .background(EndRed)
                     .then(Modifier.clickableNoRipple { vm.hangup() })
             ) {
-                Icon(
-                    imageVector = Icons.Default.CallEnd,
-                    contentDescription = "End call",
-                    tint = Color.White,
-                    modifier = Modifier.size(30.dp)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CallEnd,
+                        contentDescription = "End Call",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "End Call",
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -44,10 +45,10 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             verticalArrangement = Arrangement.Top
         ) {
             Icon(
-                painter = painterResource(id = R.drawable.ic_notif_call),
-                contentDescription = null,
+                painter = painterResource(id = R.mipmap.ic_launcher),
+                contentDescription = "App Icon",
                 modifier = Modifier.size(100.dp),
-                tint = MaterialTheme.colorScheme.primary
+                tint = Color.Unspecified
             )
             Spacer(Modifier.height(24.dp))
             Text(
