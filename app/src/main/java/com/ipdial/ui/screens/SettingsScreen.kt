@@ -1,10 +1,16 @@
 package com.ipdial.ui.screens
 
+import android.app.Activity
+import android.content.Intent
+import android.media.RingtoneManager
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,29 +19,45 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
+import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.SipViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
-    // General settings state
-    var soundsEnabled by remember { mutableStateOf(true) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val accounts by vm.accounts.collectAsState()
+    val globalRingtone by vm.globalRingtone.collectAsState()
+    
     var callsCardsEnabled by remember { mutableStateOf(true) }
     var darkModeEnabled by remember { mutableStateOf(false) }
     
-    // Diverse Audio Settings
     var callVolume by remember { mutableStateOf(0.7f) }
     var ringVolume by remember { mutableStateOf(0.8f) }
     var vibrateEnabled by remember { mutableStateOf(true) }
     var keypadTonesEnabled by remember { mutableStateOf(true) }
 
     var activeDialog by remember { mutableStateOf<String?>(null) }
+    
+    val ringtonePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            scope.launch { vm.repo.setGlobalRingtone(uri?.toString()) }
+        }
+    }
 
     if (activeDialog == "audio") {
         AlertDialog(
@@ -57,6 +79,36 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                         Text("Keypad Tones", modifier = Modifier.weight(1f))
                         Switch(checked = keypadTonesEnabled, onCheckedChange = { keypadTonesEnabled = it })
                     }
+                    
+                    Divider()
+                    
+                    Row(
+                        modifier = Modifier.fillMaxWidth().clickable { 
+                            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Global Ringtone")
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, globalRingtone?.let { Uri.parse(it) })
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                            }
+                            ringtonePickerLauncher.launch(intent)
+                        },
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Ringtone", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                text = if (globalRingtone != null) {
+                                    try {
+                                        RingtoneManager.getRingtone(context, Uri.parse(globalRingtone)).getTitle(context)
+                                    } catch (_: Exception) { "Default" }
+                                } else "Default",
+                                style = MaterialTheme.typography.bodySmall, 
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Icon(Icons.Default.ChevronRight, null)
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = { activeDialog = null }) { Text("Done") } }
@@ -74,14 +126,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Settings") },
-                actions = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(Icons.Default.Menu, contentDescription = "Menu")
-                    }
-                }
-            )
+            IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
         }
     ) { padding ->
         LazyColumn(
@@ -91,6 +136,13 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
+            // ── Donation ──────────────────────────────────────────────────
+            item {
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    DonationCardSmall(bkashNumber = "01728867695")
+                }
+            }
+
             // ── Audio ──────────────────────────────────────────────────────
             item { SettingsSection("Audio") }
 
@@ -99,9 +151,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     icon = Icons.Default.VolumeUp,
                     title = "Sounds and Vibration",
                     subtitle = "Ringtone, vibration, in-call volume",
-                    trailing = {
-                        Switch(checked = soundsEnabled, onCheckedChange = { soundsEnabled = it })
-                    },
                     onClick = { activeDialog = "audio" }
                 )
             }
@@ -195,7 +244,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 SettingsRow(
                     icon = Icons.Default.Info,
                     title = "IPDial",
-                    subtitle = "Version 1.0 • PJSIP 2.5.0 • Opus codec",
+                    subtitle = "Version 1.0 • Opus codec",
                     onClick = { activeDialog = "about" }
                 )
             }

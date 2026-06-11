@@ -31,7 +31,7 @@ import coil.compose.AsyncImage
 import com.ipdial.data.model.SipAccount
 import com.ipdial.data.model.Contact
 import com.ipdial.ui.SipViewModel
-import com.ipdial.ui.theme.EndRed
+import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.theme.ForestGreen
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -41,6 +41,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val accounts by vm.accounts.collectAsState()
     val selectedId by vm.selectedAccountId.collectAsState()
     val contacts by vm.contacts.collectAsState()
+    val mostCalled by vm.mostCalledContacts.collectAsState()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
@@ -59,18 +60,30 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             .background(MaterialTheme.colorScheme.background),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(8.dp),
-            horizontalArrangement = Arrangement.End
-        ) {
-            IconButton(onClick = onOpenDrawer) {
-                Icon(Icons.Default.Menu, contentDescription = "Menu")
-            }
-        }
+        IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
 
         // Suggested contacts space
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            if (suggestedContacts.isNotEmpty()) {
+            if (dialString.isEmpty() && mostCalled.isNotEmpty()) {
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    item {
+                        Text(
+                            text = "Most Called",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
+                        )
+                    }
+                    items(mostCalled) { contact ->
+                        SuggestedContactRow(contact) {
+                            vm.clearDial()
+                            contact.numbers.firstOrNull()?.let { num ->
+                                num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                            }
+                        }
+                    }
+                }
+            } else if (suggestedContacts.isNotEmpty()) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(suggestedContacts) { contact ->
                         SuggestedContactRow(contact) {
@@ -95,7 +108,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         // Account selector (if multiple)
         if (accounts.size > 1) {
             AccountChipRow(accounts, selectedId) { vm.selectAccount(it) }
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
         }
 
         // Dial display row
@@ -106,7 +119,6 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // 3-dot menu
             Box {
                 IconButton(onClick = { showMenu = true }) {
                     Icon(
@@ -120,7 +132,6 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                         text = { Text("Add to contact") },
                         onClick = { 
                             showMenu = false
-                            // Intent to add contact
                             val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
                                 type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
                                 putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, dialString)
@@ -143,7 +154,6 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 maxLines = 1,
             )
 
-            // Backspace (with long press)
             AnimatedVisibility(visible = dialString.isNotEmpty()) {
                 Box(
                     modifier = Modifier
@@ -168,7 +178,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             if (dialString.isEmpty()) Spacer(Modifier.size(48.dp))
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(8.dp))
 
         // Keypad grid
         val keys = listOf(
@@ -187,41 +197,56 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         )
 
         Column(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.padding(horizontal = 16.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 0.dp)
+                .background(MaterialTheme.colorScheme.surface)
         ) {
+            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             keys.chunked(3).forEach { row ->
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(IntrinsicSize.Min)
                 ) {
-                    row.forEach { (digit, sub, _) ->
+                    row.forEachIndexed { colIndex, (digit, sub, _) ->
                         DialKey(
                             digit = digit,
                             subLabel = sub,
                             onClick = {
-                                android.util.Log.d("DialpadScreen", "DialKey $digit clicked")
                                 haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                 vm.dialPad(digit[0])
                             },
+                            onLongClick = if (digit == "0") {
+                                {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    vm.dialPad('+')
+                                }
+                            } else null,
                             modifier = Modifier.weight(1f)
                         )
+                        if (colIndex < 2) {
+                            Divider(
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                modifier = Modifier.fillMaxHeight().width(1.dp)
+                            )
+                        }
                     }
                 }
+                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
 
-        // Call button
         Box(
             contentAlignment = Alignment.Center,
             modifier = Modifier
-                .size(72.dp)
-                .clip(CircleShape)
+                .width(180.dp)
+                .height(56.dp)
+                .clip(RoundedCornerShape(28.dp))
                 .background(ForestGreen)
                 .clickable(enabled = dialString.isNotEmpty()) { 
-                    android.util.Log.d("DialpadScreen", "Call button clicked. dialString=$dialString")
                     vm.makeCall() 
                 }
         ) {
@@ -229,11 +254,11 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 imageVector = Icons.Default.Call,
                 contentDescription = "Call",
                 tint = Color.White,
-                modifier = Modifier.size(32.dp)
+                modifier = Modifier.size(28.dp)
             )
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -285,20 +310,23 @@ fun SuggestedContactRow(contact: Contact, onClick: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DialKey(
     digit: String,
     subLabel: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        shape = RoundedCornerShape(50),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+    Box(
         modifier = modifier
-            .height(72.dp)
-            .clip(RoundedCornerShape(50))
-            .clickable { onClick() }
+            .height(64.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
+        contentAlignment = Alignment.Center
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -307,13 +335,14 @@ fun DialKey(
             Text(
                 text = digit,
                 style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Normal),
-                color = MaterialTheme.colorScheme.onBackground,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             if (subLabel.isNotBlank()) {
                 Text(
                     text = subLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    fontSize = 10.sp
                 )
             }
         }
@@ -337,9 +366,9 @@ fun AccountChipRow(
             FilterChip(
                 selected = acc.id == selectedId,
                 onClick = { onSelect(acc.id) },
-                label = { Text(acc.label.ifBlank { acc.domain }) },
+                label = { Text(acc.label.ifBlank { acc.domain }, fontSize = 10.sp) },
                 leadingIcon = if (acc.id == selectedId) {
-                    { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                    { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) }
                 } else null
             )
         }

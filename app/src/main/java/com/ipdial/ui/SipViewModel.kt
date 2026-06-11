@@ -1,7 +1,14 @@
 package com.ipdial.ui
 
 import android.app.Application
+import android.content.ComponentName
+import android.content.Context
+import android.net.*
+import android.os.Bundle
+import android.telecom.PhoneAccountHandle
+import android.telecom.TelecomManager
 import androidx.lifecycle.AndroidViewModel
+import android.widget.Toast
 import androidx.lifecycle.viewModelScope
 import com.ipdial.data.model.*
 import com.ipdial.data.repository.AccountRepository
@@ -16,11 +23,14 @@ import kotlinx.coroutines.launch
 class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     val repo = AccountRepository(app)
-    private val logRepo = CallLogRepository(app)
+    private val logRepo = CallLogRepository.getInstance(app)
     private val contactsRepo = ContactsRepository(app)
 
     val accounts: StateFlow<List<SipAccount>> = repo.accounts
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val globalRingtone: StateFlow<String?> = repo.globalRingtone
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -42,17 +52,69 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     private val _selectedAccountId = MutableStateFlow<String?>(null)
     val selectedAccountId: StateFlow<String?> = _selectedAccountId.asStateFlow()
 
+    private val _isConnected = MutableStateFlow(true)
+    val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
+
+    val mostCalledContacts: StateFlow<List<Contact>> = combine(callLog, contacts) { logs, allContacts ->
+        val frequencyMap = logs.groupingBy { 
+            cleanUri(it.remoteUri)
+        }.eachCount()
+        
+        frequencyMap.entries
+            .sortedByDescending { it.value }
+            .mapNotNull { entry ->
+                val cleanedCallLogNumber = entry.key.filter { it.isDigit() }
+                if (cleanedCallLogNumber.length < 10) { // Only consider matching if the call log number is long enough
+                    null
+                } else {
+                    allContacts.find { contact ->
+                        contact.numbers.any { num ->
+                            val cleanedContactNumber = num.filter { it.isDigit() }
+                            cleanedContactNumber.length >= 10 && // Contact number must also be long enough
+                            (cleanedCallLogNumber.contains(cleanedContactNumber) || cleanedContactNumber.contains(cleanedCallLogNumber))
+                        }
+                    }
+                }
+            }
+            .distinctBy { it.id }
+            .take(5)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     private var searchJob: Job? = null
 
     init {
+        val connectivityManager = app.getSystemService(Application.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val networkRequest = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+        
+        connectivityManager.registerNetworkCallback(networkRequest, object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                _isConnected.value = true
+                viewModelScope.launch {
+                    accounts.value.forEach { 
+                        if (it.isEnabled) SipEngine.addAccount(it)
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                _isConnected.value = false
+                viewModelScope.launch {
+                    accounts.value.forEach {
+                        repo.updateRegStatus(it.id, RegStatus.ERROR)
+                    }
+                }
+            }
+        })
+
         // Auto-select default account
         viewModelScope.launch {
             accounts.collectLatest { list ->
-                // Synchronize accounts with SipEngine whenever the list changes
                 list.forEach { account ->
-                    if (account.isEnabled) {
+                    if (account.isEnabled && _isConnected.value) {
                         SipEngine.addAccount(account)
-                    } else {
+                    } else if (!account.isEnabled) {
                         SipEngine.removeAccount(account.id)
                     }
                 }
@@ -91,7 +153,6 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dialPad(char: Char) {
         _dialString.value += char
-        // If in call, send DTMF
         if (callSession.value?.state == CallState.CONFIRMED) {
             SipEngine.sendDtmf(char)
         }
@@ -107,36 +168,114 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     fun selectAccount(id: String) { _selectedAccountId.value = id }
 
     fun makeCall(overrideNumber: String? = null) {
-        var dest = (overrideNumber ?: _dialString.value).trim()
-        android.util.Log.d("SipViewModel", "makeCall pressed. dest=$dest")
-        if (dest.isBlank()) return
+        val rawInput = (overrideNumber ?: _dialString.value).trim()
+        if (rawInput.isBlank()) {
+            Toast.makeText(getApplication(), "Please enter a number", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Clean formatting characters (spaces, dashes, parentheses)
+        val cleanedInput = rawInput.replace(" ", "")
+            .replace("-", "")
+            .replace("(", "")
+            .replace(")", "")
+
         val accId = _selectedAccountId.value ?: accounts.value.firstOrNull()?.id
-        android.util.Log.d("SipViewModel", "Selected Account ID: $accId")
-        if (accId == null) return
-        
+        if (accId == null) {
+            Toast.makeText(getApplication(), "No SIP account configured", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val account = accounts.value.find { it.id == accId }
-        android.util.Log.d("SipViewModel", "Account found: ${account != null}, enabled: ${account?.isEnabled}")
-        if (account != null && account.isEnabled) {
-            if (!dest.contains("@") && !dest.startsWith("sip:")) {
-                dest = "sip:$dest@${account.domain}"
+        if (account == null || !account.isEnabled) {
+            Toast.makeText(getApplication(), "Selected account is disabled", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (!_isConnected.value) {
+            Toast.makeText(getApplication(), "No internet connection", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (callSession.value != null) {
+            Toast.makeText(getApplication(), "A call is already in progress", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val transportSuffix = when (account.transport) {
+            Transport.TCP -> ";transport=tcp"
+            Transport.TLS -> ";transport=tls"
+            else -> ""
+        }
+
+        val finalUri = if (cleanedInput.contains("@")) {
+            val base = if (cleanedInput.startsWith("sip:")) cleanedInput else "sip:$cleanedInput"
+            if (!base.contains("transport=") && transportSuffix.isNotEmpty()) {
+                base + transportSuffix
+            } else {
+                base
             }
-            android.util.Log.d("SipViewModel", "Final dest: $dest")
-            
-            if (account.regStatus != RegStatus.REGISTERED) {
-                android.util.Log.w("SipViewModel", "Account status is ${account.regStatus}. Call might be rejected by provider.")
+        } else {
+            var num = cleanedInput.removePrefix("sip:")
+
+            // BD automatic handling: 017... (11 digits) or 17... (10 digits)
+            if (num.all { it.isDigit() }) {
+                if (num.length == 11 && num.startsWith("0")) {
+                    num = "+880${num.drop(1)}"
+                } else if (num.length == 10 && num.startsWith("1")) {
+                    num = "+880$num"
+                }
             }
 
-            val success = SipEngine.makeCall(accId, dest)
-            android.util.Log.d("SipViewModel", "SipEngine.makeCall success: $success")
+            val host = if (account.port != null && account.port > 0 && !account.domain.contains(":")) {
+                "${account.domain}:${account.port}"
+            } else {
+                account.domain
+            }
+            "sip:$num@$host$transportSuffix"
+        }
+
+        android.util.Log.d("SipViewModel", "Direct Dialing: $finalUri")
+
+        if (callSession.value == null) {
+            // Use TelecomHelper to place the call for proper system integration
+            val success = try {
+                com.ipdial.service.TelecomHelper.placeOutgoingCall(getApplication(), finalUri, accId)
+            } catch (e: Exception) {
+                android.util.Log.e("SipViewModel", "TelecomManager failure, falling back", e)
+                false
+            }
+            if (!success) {
+                android.util.Log.i("SipViewModel", "TelecomManager call failed to initiate, falling back to direct SipEngine calling")
+                val engineStarted = SipEngine.makeCall(accId, finalUri)
+                if (!engineStarted) {
+                    Toast.makeText(getApplication(), "Call not sent", Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
+    fun cleanUri(uri: String): String {
+        return uri.removePrefix("sip:")
+            .substringBefore("@")
+            .substringBefore(";")
+    }
     fun answerCall() {
         val id = callSession.value?.callId ?: return
         SipEngine.answerCall(id)
+        com.ipdial.service.SipConnectionService.getConnection(id)?.setActive()
     }
 
-    fun hangup() { SipEngine.hangupCall() }
+    fun hangup() { 
+        val id = callSession.value?.callId ?: -1
+        SipEngine.hangupCall(id)
+        if (id != -1) {
+            com.ipdial.service.SipConnectionService.getConnection(id)?.let {
+                it.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.LOCAL))
+                it.destroy()
+            }
+        }
+    }
     fun toggleMute() { SipEngine.setMute(!(callSession.value?.isMuted ?: false)) }
     fun toggleSpeaker() { SipEngine.setSpeaker(!(callSession.value?.isSpeaker ?: false)) }
     fun toggleHold() { SipEngine.holdCall(!(callSession.value?.isOnHold ?: false)) }
@@ -146,10 +285,16 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         if (session.isRecording) {
             SipEngine.stopRecording()
         } else {
-            val file = java.io.File(getApplication<Application>().filesDir, "recordings")
-            if (!file.exists()) file.mkdirs()
-            val recFile = java.io.File(file, "call_${System.currentTimeMillis()}.wav")
-            SipEngine.startRecording(recFile.absolutePath)
+            // Priority: Internal storage as requested
+            val folder = java.io.File(getApplication<Application>().filesDir, "recordings")
+            try {
+                if (!folder.exists()) folder.mkdirs()
+                val recFile = java.io.File(folder, "IPDial_${System.currentTimeMillis()}.wav")
+                // Format codec is handled by SipEngine (currently WAV for simplicity, or Opus if configured)
+                SipEngine.startRecording(recFile.absolutePath)
+            } catch (e: Exception) {
+                android.util.Log.e("SipViewModel", "Recording failed", e)
+            }
         }
     }
 
@@ -168,14 +313,12 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     fun toggleContactFavorite(contact: Contact) = viewModelScope.launch {
         val newFavoriteStatus = !contact.isFavorite
-        // Optimistic update
         _contacts.value = _contacts.value.map {
             if (it.id == contact.id) it.copy(isFavorite = newFavoriteStatus) else it
         }
         contactsRepo.toggleFavorite(contact.id, newFavoriteStatus)
     }
 
-    /** Initiate a call-back from a call-log entry. */
     fun callBack(entry: CallLogEntry) {
         val accId = entry.accountId.ifBlank {
             _selectedAccountId.value ?: accounts.value.firstOrNull()?.id ?: return
@@ -184,6 +327,15 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         makeCall(entry.remoteUri)
     }
 
-    /** Log a completed/missed call.  Called from SipService after call ends. */
-    fun logCall(entry: CallLogEntry) = viewModelScope.launch { logRepo.insert(entry) }
+    fun logCall(entry: CallLogEntry) = viewModelScope.launch {
+        logRepo.insert(entry)
+        // Maintain a maximum of 50 entries in the call log
+        val logs = logRepo.entries.first()
+        if (logs.size > 50) {
+            val toDelete = logs.sortedByDescending { it.timestampMs }.drop(50)
+            toDelete.forEach { logEntry ->
+                logRepo.delete(logEntry)
+            }
+        }
+    }
 }

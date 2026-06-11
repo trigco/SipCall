@@ -18,11 +18,23 @@ class AccountRepository(private val context: Context) {
 
     private val gson = Gson()
     private val ACCOUNTS_KEY = stringPreferencesKey("accounts")
+    private val RINGTONE_KEY = stringPreferencesKey("global_ringtone")
 
     val accounts: Flow<List<SipAccount>> = context.dataStore.data.map { prefs ->
         val json = prefs[ACCOUNTS_KEY] ?: return@map emptyList()
         val type = object : TypeToken<List<SipAccount>>() {}.type
         gson.fromJson(json, type) ?: emptyList()
+    }
+
+    val globalRingtone: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[RINGTONE_KEY]
+    }
+
+    suspend fun setGlobalRingtone(uri: String?) {
+        context.dataStore.edit { prefs ->
+            if (uri == null) prefs.remove(RINGTONE_KEY)
+            else prefs[RINGTONE_KEY] = uri
+        }
     }
 
     suspend fun saveAccount(account: SipAccount) {

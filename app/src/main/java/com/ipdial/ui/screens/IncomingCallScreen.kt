@@ -1,23 +1,28 @@
 package com.ipdial.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
-import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -25,6 +30,7 @@ import com.ipdial.data.model.CallSession
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.theme.EndRed
 import com.ipdial.ui.theme.ForestGreen
+import kotlin.math.roundToInt
 
 @Composable
 fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
@@ -32,17 +38,24 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
     val contacts by vm.contacts.collectAsState()
     
     val account = accounts.firstOrNull { it.id == session.accountId }
-    // "GP 92" style label from account label or domain
     val viaLine  = account?.label?.ifBlank { account.domain } ?: "SIP"
-    // Display name / username of the registered account
-    val callVia  = account?.let {
-        it.label.ifBlank { it.username }
-    } ?: ""
-
+    val callVia  = account?.let { it.label.ifBlank { it.username } } ?: ""
+    
     val contact = remember(session.remoteUri, contacts) {
-        contacts.find { c -> c.numbers.any { n -> session.remoteUri.contains(n.filter { it.isDigit() }) } }
+        val cleanedSessionUriDigits = vm.cleanUri(session.remoteUri).filter { it.isDigit() }
+        if (cleanedSessionUriDigits.length < 10) { // Only attempt contact match for numbers with at least 10 digits
+            null
+        } else {
+            contacts.find { c ->
+                c.numbers.any { n ->
+                    val cleanedContactNumberDigits = n.filter { it.isDigit() }
+                    cleanedContactNumberDigits.length >= 10 && // Contact number must also be long enough
+                    (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
+                }
+            }
+        }
     }
-    val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { cleanUri(session.remoteUri) }
+    val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { vm.cleanUri(session.remoteUri) }
 
     Column(
         modifier = Modifier
@@ -52,7 +65,6 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
     ) {
         Spacer(Modifier.height(64.dp))
 
-        // "Incoming Call via GP 92 > Call via <username>"
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "Incoming Call via $viaLine",
@@ -60,28 +72,17 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (callVia.isNotBlank()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "Call via ",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Text(
-                        text = callVia,
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
+                Text(
+                    text = "Call via $callVia",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(32.dp))
 
-        // Caller number / name — large, matches screenshot
         Text(
             text = displayName,
             style = MaterialTheme.typography.displayMedium.copy(
@@ -93,21 +94,20 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             modifier = Modifier.padding(horizontal = 24.dp)
         )
 
-        if (displayName != cleanUri(session.remoteUri)) {
-            Spacer(Modifier.height(6.dp))
+        if (displayName != vm.cleanUri(session.remoteUri)) {
+            Spacer(Modifier.height(8.dp))
             Text(
-                text = cleanUri(session.remoteUri),
+                text = vm.cleanUri(session.remoteUri),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(48.dp))
         
-        // Avatar circle
         Box(
             modifier = Modifier
-                .size(140.dp)
+                .size(160.dp)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center
@@ -130,84 +130,83 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
 
         Spacer(Modifier.weight(1f))
 
-        // Message button (middle)
-        Surface(
-            shape = RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            modifier = Modifier
-                .padding(bottom = 24.dp)
-                .clip(RoundedCornerShape(50))
-                .clickable { /* TODO: send quick message */ }
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Message,
-                    contentDescription = "Message",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    "Message",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+        // Swipe to Answer/Decline Slider
+        var offsetX by remember { mutableStateOf(0f) }
+        val density = LocalDensity.current
+        val dragRange = with(density) { 100.dp.toPx() }
+        val swipeThreshold = dragRange * 0.7f
 
-        // Decline | [Call icon] | Answer  — matches screenshot layout
-        Box(
+        Column(
             modifier = Modifier
-                .padding(horizontal = 24.dp, vertical = 0.dp)
-                .padding(bottom = 56.dp)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(50))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
+                .padding(bottom = 80.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Row(
+            // The "Pill" Track
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp, horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                    .width(320.dp)
+                    .height(96.dp)
+                    .clip(RoundedCornerShape(48.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+                contentAlignment = Alignment.Center
             ) {
-                // Decline
-                TextButton(onClick = { vm.hangup() }) {
-                    Text(
-                        "Decline",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                // Central call icon button (white circle)
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                        .clickable { vm.answerCall() }
+                // Background hints (Decline/Answer icons)
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
-                        imageVector = Icons.Default.Call,
-                        contentDescription = "Answer",
-                        tint = ForestGreen,
-                        modifier = Modifier.size(28.dp)
+                        Icons.Default.CallEnd,
+                        contentDescription = null,
+                        tint = if (offsetX < -40) EndRed else EndRed.copy(alpha = 0.4f),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Icon(
+                        Icons.Default.Call,
+                        contentDescription = null,
+                        tint = if (offsetX > 40) ForestGreen else ForestGreen.copy(alpha = 0.4f),
+                        modifier = Modifier.size(32.dp)
                     )
                 }
 
-                // Answer
-                TextButton(onClick = { vm.answerCall() }) {
-                    Text(
-                        "Answer",
-                        color = MaterialTheme.colorScheme.primary,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Medium
+                // Rounded Phone Icon (Swiping Handle)
+                Box(
+                    modifier = Modifier
+                        .offset { IntOffset(offsetX.roundToInt(), 0) }
+                        .shadow(elevation = 8.dp, shape = CircleShape)
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surface)
+                        .draggable(
+                            orientation = Orientation.Horizontal,
+                            state = rememberDraggableState { delta ->
+                                offsetX = (offsetX + delta).coerceIn(-dragRange, dragRange)
+                            },
+                            onDragStopped = {
+                                when {
+                                    offsetX >= swipeThreshold -> vm.answerCall()
+                                    offsetX <= -swipeThreshold -> vm.hangup()
+                                }
+                                offsetX = 0f
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = when {
+                            offsetX > 40 -> Icons.Default.Call
+                            offsetX < -40 -> Icons.Default.CallEnd
+                            else -> Icons.Default.SwapHoriz
+                        },
+                        contentDescription = null,
+                        tint = when {
+                            offsetX > 40 -> ForestGreen
+                            offsetX < -40 -> EndRed
+                            else -> MaterialTheme.colorScheme.primary
+                        },
+                        modifier = Modifier.size(36.dp)
                     )
                 }
             }

@@ -28,6 +28,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
 import com.ipdial.ui.SipViewModel
+import com.ipdial.ui.IPDialTopBar
+import com.ipdial.ui.RegStatusIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,14 +40,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("SIP Accounts") },
-                actions = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(Icons.Default.Menu, contentDescription = "Menu")
-                    }
-                }
-            )
+            IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
         },
         floatingActionButton = {
             FloatingActionButton(onClick = {
@@ -59,6 +54,13 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding)
         ) {
+            // ── Donation ──────────────────────────────────────────────────
+            item {
+                Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    DonationCardSmall(bkashNumber = "01728867695")
+                }
+            }
+
             items(accounts) { account ->
                 AccountSettingsRow(
                     account = account,
@@ -101,8 +103,7 @@ fun AccountSettingsRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Status dot
-            RegStatusDot(account.regStatus)
+            RegStatusIndicator(accounts = listOf(account))
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -169,27 +170,26 @@ fun AccountEditSheet(
     onSave: (SipAccount) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val context = LocalContext.current
     var label     by remember { mutableStateOf(existing?.label ?: "") }
     var username  by remember { mutableStateOf(existing?.username ?: "") }
     var password  by remember { mutableStateOf(existing?.password ?: "") }
     var domain    by remember { mutableStateOf(existing?.domain ?: "") }
     var proxy     by remember { mutableStateOf(existing?.proxy ?: "") }
-    var port      by remember { mutableStateOf((existing?.port ?: 5060).toString()) }
+    var port      by remember { mutableStateOf(existing?.port?.toString() ?: "") }
     var transport by remember { mutableStateOf(existing?.transport ?: Transport.UDP) }
     var codec     by remember { mutableStateOf(existing?.codec ?: PreferredCodec.OPUS) }
     var ecEnabled by remember { mutableStateOf(existing?.ecEnabled ?: true) }
     var nsEnabled by remember { mutableStateOf(existing?.nsEnabled ?: true) }
     var agcEnabled by remember { mutableStateOf(existing?.agcEnabled ?: true) }
-    var ringtoneUri by remember { mutableStateOf(existing?.ringtoneUri) }
     var showPass  by remember { mutableStateOf(false) }
 
-    val ringtonePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            ringtoneUri = uri?.toString()
+    // Auto-detect transport based on domain/proxy
+    LaunchedEffect(domain, proxy) {
+        val isSips = domain.startsWith("sips:", ignoreCase = true) || proxy.startsWith("sips:", ignoreCase = true)
+        if (isSips && transport != Transport.TLS) {
+            transport = Transport.TLS
+        } else if (!isSips && transport == Transport.TLS) {
+            transport = Transport.UDP
         }
     }
 
@@ -280,42 +280,6 @@ fun AccountEditSheet(
                 }
             }
 
-            // Ringtone Selection
-            OutlinedCard(
-                onClick = {
-                    val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Account Ringtone")
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, ringtoneUri?.let { Uri.parse(it) })
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                        putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                    }
-                    ringtonePickerLauncher.launch(intent)
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.MusicNote, null)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text("Custom Ringtone", style = MaterialTheme.typography.labelLarge)
-                        Text(
-                            text = if (ringtoneUri != null) {
-                                try {
-                                    RingtoneManager.getRingtone(context, Uri.parse(ringtoneUri)).getTitle(context)
-                                } catch (e: Exception) {
-                                    "System Default"
-                                }
-                            } else "System Default",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-            }
-
             Spacer(Modifier.height(8.dp))
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -332,13 +296,12 @@ fun AccountEditSheet(
                                     password = password,
                                     domain = domain,
                                     proxy = proxy,
-                                    port = port.toIntOrNull() ?: 5060,
+                                    port = port.toIntOrNull(),
                                     transport = transport,
                                     codec = codec,
                                     ecEnabled = ecEnabled,
                                     nsEnabled = nsEnabled,
-                                    agcEnabled = agcEnabled,
-                                    ringtoneUri = ringtoneUri
+                                    agcEnabled = agcEnabled
                                 )
                             )
                         }

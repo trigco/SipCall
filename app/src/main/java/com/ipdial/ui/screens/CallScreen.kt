@@ -38,10 +38,22 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
     val account = accounts.firstOrNull { it.id == session.accountId }
     val simLabel = account?.label?.ifBlank { account.domain } ?: ""
 
+    // Contact matching logic
     val contact = remember(session.remoteUri, contacts) {
-        contacts.find { c -> c.numbers.any { n -> session.remoteUri.contains(n.filter { it.isDigit() }) } }
+        val cleanedSessionUriDigits = vm.cleanUri(session.remoteUri).filter { it.isDigit() }
+        if (cleanedSessionUriDigits.length < 10) { // Only attempt contact match for numbers with at least 10 digits
+            null
+        } else {
+            contacts.find { c ->
+                c.numbers.any { n ->
+                    val cleanedContactNumberDigits = n.filter { it.isDigit() }
+                    cleanedContactNumberDigits.length >= 10 && // Contact number must also be long enough
+                    (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
+                }
+            }
+        }
     }
-    val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { cleanUri(session.remoteUri) }
+    val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { vm.cleanUri(session.remoteUri) }
 
     var showDialpad by remember { mutableStateOf(false) }
     var elapsedSeconds by remember { mutableStateOf(0L) }
@@ -68,16 +80,21 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             Spacer(Modifier.height(48.dp))
 
             // Via label
-            Text(
-                text = when {
-                    session.state == CallState.CONFIRMED -> formatDuration(elapsedSeconds)
-                    session.direction == CallDirection.INCOMING && session.state != CallState.CONFIRMED ->
-                        "Call via ${simLabel}"
-                    else -> "Calling via ${simLabel}"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Calling via $simLabel",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (session.state == CallState.CONFIRMED) {
+                    Text(
+                        text = formatDuration(elapsedSeconds),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
 
@@ -93,10 +110,10 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
 
-            if (displayName != cleanUri(session.remoteUri)) {
+            if (displayName != vm.cleanUri(session.remoteUri)) {
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = cleanUri(session.remoteUri),
+                    text = vm.cleanUri(session.remoteUri),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

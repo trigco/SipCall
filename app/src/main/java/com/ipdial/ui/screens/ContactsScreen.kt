@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.ipdial.data.model.Contact
 import com.ipdial.ui.SipViewModel
+import com.ipdial.ui.IPDialTopBar
 
 import android.content.Intent
 import android.net.Uri
@@ -29,14 +30,12 @@ import androidx.compose.ui.platform.LocalContext
 fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val contacts by vm.contacts.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
+    val accounts by vm.accounts.collectAsState()
     val context = LocalContext.current
 
     Scaffold(
         topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Contacts") },
-                actions = { IconButton(onClick = onOpenDrawer) { Icon(Icons.Default.Menu, "Menu") } }
-            )
+            IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {

@@ -14,11 +14,11 @@ import org.json.JSONObject
 
 /**
  * Simple SharedPreferences-backed call-log repository.
- * No Room dependency needed; the log is small and JSON round-trips are fine.
+ * Uses a singleton pattern to ensure all parts of the app see the same data.
  *
- * Entries are stored newest-first.  Maximum 200 entries are retained.
+ * Entries are stored newest-first. Maximum 200 entries are retained.
  */
-class CallLogRepository(context: Context) {
+class CallLogRepository private constructor(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("call_log", Context.MODE_PRIVATE)
@@ -26,29 +26,40 @@ class CallLogRepository(context: Context) {
     private val _entries = MutableStateFlow(load())
     val entries: Flow<List<CallLogEntry>> = _entries.asStateFlow()
 
-    // ── Public API ─────────────────────────────────────────────────────────
-
     fun insert(entry: CallLogEntry) {
         _entries.update { current ->
-            listOf(entry) + current.take(199)  // cap at 200
+            val newList = listOf(entry) + current.take(199)
+            persist(newList)
+            newList
         }
-        persist(_entries.value)
     }
 
-    // ── Serialisation ──────────────────────────────────────────────────────
+    fun delete(entry: CallLogEntry) {
+        _entries.update { current ->
+            val newList = current.filter { it.id != entry.id }
+            persist(newList)
+            newList
+        }
+    }
 
-    private fun load(): List<CallLogEntry> = runCatching {
+    private fun load(): List<CallLogEntry> = try {
         val json = prefs.getString(KEY_LOG, null) ?: return emptyList()
         val arr  = JSONArray(json)
-        (0 until arr.length()).map { i -> arr.getJSONObject(i).toEntry() }
-    }.getOrDefault(emptyList())
+        val list = mutableListOf<CallLogEntry>()
+        for (i in 0 until arr.length()) {
+            try {
+                list.add(arr.getJSONObject(i).toEntry())
+            } catch (e: Exception) { /* Skip corrupted */ }
+        }
+        list
+    } catch (e: Exception) {
+        emptyList()
+    }
 
     private fun persist(entries: List<CallLogEntry>) {
         val arr = JSONArray().apply { entries.forEach { put(it.toJson()) } }
         prefs.edit { putString(KEY_LOG, arr.toString()) }
     }
-
-    // ── JSON helpers ───────────────────────────────────────────────────────
 
     private fun CallLogEntry.toJson() = JSONObject().apply {
         put("id",          id)
@@ -62,19 +73,30 @@ class CallLogRepository(context: Context) {
     }
 
     private fun JSONObject.toEntry() = CallLogEntry(
-        id                  = getString("id"),
+        id                  = optString("id", java.util.UUID.randomUUID().toString()),
         accountId           = optString("accountId"),
         remoteUri           = optString("remoteUri"),
         remoteDisplayName   = optString("remoteName"),
-        direction           = runCatching {
+        direction           = try {
             CallDirection.valueOf(getString("direction"))
-        }.getOrDefault(CallDirection.INCOMING),
+        } catch (e: Exception) {
+            CallDirection.INCOMING
+        },
         missed              = optBoolean("missed", false),
         timestampMs         = optLong("ts", System.currentTimeMillis()),
         durationSeconds     = optLong("dur", 0L),
     )
 
     companion object {
-        private const val KEY_LOG = "entries_v1"
+        private const val KEY_LOG = "entries_v2"
+        
+        @Volatile
+        private var INSTANCE: CallLogRepository? = null
+
+        fun getInstance(context: Context): CallLogRepository {
+            return INSTANCE ?: synchronized(this) {
+                INSTANCE ?: CallLogRepository(context.applicationContext).also { INSTANCE = it }
+            }
+        }
     }
 }

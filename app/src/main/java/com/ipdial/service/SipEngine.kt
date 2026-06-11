@@ -12,13 +12,24 @@ import org.pjsip.pjsua2.*
  * PJSIP engine singleton.
  * Manages the Endpoint lifecycle, account registration, and call sessions.
  */
+class SipLogWriter : LogWriter() {
+    override fun write(entry: LogEntry) {
+        val msg = entry.msg
+        if (!msg.isNullOrBlank()) {
+            com.ipdial.util.SipLogger.log("PJSIP", msg.trim())
+        }
+    }
+}
+
 object SipEngine {
 
     private const val TAG = "SipEngine"
 
     private var endpoint: Endpoint? = null
     private val accountMap = mutableMapOf<String, PjAccount>()   // accountId -> PjAccount
+    private val accountConfigs = mutableMapOf<String, SipAccount>() // accountId -> SipAccount configuration
     private val callMap = mutableMapOf<Int, PjCall>()             // callId -> PjCall
+    private val registeredThreads = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
     
     private var udpTransportId: Int = -1
     private var tcpTransportId: Int = -1
@@ -32,20 +43,55 @@ object SipEngine {
 
     var onIncomingCall: ((CallSession) -> Unit)? = null
 
+    private var recorder: AudioMediaRecorder? = null
+    private var logWriter: SipLogWriter? = null
+
+    private fun log(message: String, isError: Boolean = false) {
+        if (isError) {
+            Log.e(TAG, message)
+            com.ipdial.util.SipLogger.log("ERROR", message)
+        } else {
+            Log.d(TAG, message)
+            com.ipdial.util.SipLogger.log("SipEngine", message)
+        }
+    }
+
+    private fun registerCurrentThread() {
+        val ep = endpoint ?: return
+        val threadId = Thread.currentThread().id
+        if (registeredThreads.contains(threadId)) {
+            return
+        }
+        try {
+            if (!ep.libIsThreadRegistered()) {
+                val threadName = Thread.currentThread().name ?: "SipEngineThread"
+                ep.libRegisterThread(threadName)
+            }
+            registeredThreads.add(threadId)
+        } catch (e: Throwable) {
+            log("Failed to register thread: ${e.message}", true)
+        }
+    }
+
     fun init(context: Context) {
         if (endpoint != null) return
         try {
             System.loadLibrary("pjsua2")
+            
+            val writer = SipLogWriter()
+            this.logWriter = writer
+            
             endpoint = Endpoint().apply {
                 libCreate()
                 val epCfg = EpConfig().apply {
-                    logConfig.level = 5
-                    logConfig.consoleLevel = 5
+                    logConfig.level = 4
+                    logConfig.consoleLevel = 4
+                    logConfig.writer = writer
                     medConfig.apply {
                         ecOptions = 0
                         ecTailLen = 200
                         noVad = false
-                        clockRate = 16000
+                        clockRate = 48000
                         quality = 8
                     }
                     uaConfig.apply {
@@ -58,31 +104,65 @@ object SipEngine {
 
                 val sipTpCfg = TransportConfig()
                 sipTpCfg.port = 0
-                udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
+                try {
+                    udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
+                } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
                 
                 val tcpTpCfg = TransportConfig()
                 tcpTpCfg.port = 0
-                tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
+                try {
+                    tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
+                } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
                 
                 val tlsTpCfg = TransportConfig()
-                tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
+                tlsTpCfg.tlsConfig.verifyServer = false
+                tlsTpCfg.tlsConfig.verifyClient = false
+                try {
+                    tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
+                } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
 
                 libStart()
-                Log.i(TAG, "PJSIP started")
+                log("PJSIP started successfully")
             }
         } catch (e: Throwable) {
-            Log.e(TAG, "PJSIP init failed: ${e.message}")
+            log("PJSIP init failed: ${e.message}", true)
         }
     }
 
     fun addAccount(account: SipAccount) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         try {
+            val existingConfig = accountConfigs[account.id]
+            if (existingConfig != null) {
+                val hasChanged = existingConfig.username != account.username ||
+                        existingConfig.password != account.password ||
+                        existingConfig.domain != account.domain ||
+                        existingConfig.proxy != account.proxy ||
+                        existingConfig.port != account.port ||
+                        existingConfig.transport != account.transport ||
+                        existingConfig.codec != account.codec ||
+                        existingConfig.ecEnabled != account.ecEnabled ||
+                        existingConfig.nsEnabled != account.nsEnabled ||
+                        existingConfig.agcEnabled != account.agcEnabled
+
+                if (!hasChanged) {
+                    log("Account ${account.id} configuration unchanged, skipping addAccount")
+                    return
+                }
+            }
+
             accountMap[account.id]?.let { removeAccount(account.id) }
 
             val acfg = AccountConfig().apply {
                 idUri = "sip:${account.username}@${account.domain}"
-                regConfig.registrarUri = "sip:${account.domain}:${account.port}"
+                
+                // If port is null or 0, let PJSIP handle it by not appending it
+                regConfig.registrarUri = if (account.port != null && account.port > 0) {
+                    "sip:${account.domain}:${account.port}"
+                } else {
+                    "sip:${account.domain}"
+                }
+
                 regConfig.timeoutSec = 300
 
                 val cred = AuthCredInfo("digest", "*", account.username, 0, account.password)
@@ -99,98 +179,125 @@ object SipEngine {
                 }
 
                 mediaConfig.apply {
+                    // Use OPTIONAL instead of MANDATORY for broader compatibility
                     srtpUse = if (account.transport == Transport.TLS)
-                        pjmedia_srtp_use.PJMEDIA_SRTP_MANDATORY
+                        pjmedia_srtp_use.PJMEDIA_SRTP_OPTIONAL
                     else
                         pjmedia_srtp_use.PJMEDIA_SRTP_DISABLED
                 }
 
-                natConfig.iceEnabled = true
+                // ICE can cause delays if not configured perfectly, disabling for now
+                natConfig.iceEnabled = false
                 natConfig.turnEnabled = false
-                // Use default instead of disabled if disabled causes issues
                 natConfig.sipStunUse = pjsua_stun_use.PJSUA_STUN_USE_DEFAULT
             }
 
             val pjAcc = PjAccount(account.id)
-            pjAcc.create(acfg)
-            accountMap[account.id] = pjAcc
-            configureCodecs(account.codec, account.ecEnabled, account.nsEnabled, account.agcEnabled)
+            try {
+                pjAcc.create(acfg)
+                accountMap[account.id] = pjAcc
+                accountConfigs[account.id] = account
+                log("Account added successfully: ${account.id} (${account.username})")
+                configureCodecs(account.codec, account.ecEnabled, account.nsEnabled, account.agcEnabled)
+            } catch (e: Throwable) {
+                pjAcc.delete()
+                throw e
+            }
         } catch (e: Throwable) {
-            Log.e(TAG, "addAccount failed: ${e.message}")
+            log("addAccount failed: ${e.message}", true)
         }
     }
 
     fun removeAccount(accountId: String) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         try {
             accountMap[accountId]?.delete()
             accountMap.remove(accountId)
+            accountConfigs.remove(accountId)
+            log("Account removed: $accountId")
         } catch (e: Throwable) {
-            Log.e(TAG, "removeAccount failed: ${e.message}")
+            log("removeAccount failed: ${e.message}", true)
         }
     }
 
     fun makeCall(accountId: String, destination: String): Boolean {
-        Log.d(TAG, "SipEngine.makeCall(acc=$accountId, dest=$destination)")
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         return try {
-            val pjAcc = accountMap[accountId]
-            if (pjAcc == null) {
-                Log.e(TAG, "pjAcc is null for $accountId. Current map keys: ${accountMap.keys}")
+            val pjAcc = accountMap[accountId] ?: run {
+                log("makeCall failed: accountId $accountId not found in accountMap. Current accounts: ${accountMap.keys}", true)
                 return false
             }
             val destUri = if (destination.startsWith("sip:")) destination else "sip:$destination"
+            
+            log("making call to $destUri")
             val call = PjCall(pjAcc)
-            val prm = CallOpParam(true).apply {
-                opt.audioCount = 1
-                opt.videoCount = 0
-            }
-            call.makeCall(destUri, prm)
-            Log.i(TAG, "Calling $destUri from account $accountId")
-            callMap[call.id] = call
+            
+            // Set call session to CALLING before placing the call.
+            // Using -1 temporarily; it gets updated either in the try block below or in onCallState.
             _callSession.value = CallSession(
-                callId = call.id,
+                callId = -1,
                 accountId = accountId,
                 remoteUri = destUri,
                 direction = CallDirection.OUTGOING,
                 state = CallState.CALLING
             )
-            true
+            
+            val prm = CallOpParam(true).apply {
+                opt.audioCount = 1
+                opt.videoCount = 0
+            }
+            
+            try {
+                call.makeCall(destUri, prm)
+                val realId = call.getId()
+                callMap[realId] = call
+                log("call.makeCall returned successfully. assigned call ID = $realId")
+                
+                // Only update if call session was not cleared/disconnected in the meantime
+                _callSession.value?.let { currentSession ->
+                    if (currentSession.state != CallState.DISCONNECTED) {
+                        _callSession.value = currentSession.copy(callId = realId)
+                    }
+                }
+                true
+            } catch (e: Throwable) {
+                call.delete()
+                _callSession.value = null
+                log("call.makeCall failed: ${e.message}", true)
+                false
+            }
         } catch (e: Throwable) {
-            Log.e(TAG, "makeCall failed with exception: ${e.message}", e)
+            log("makeCall failed: ${e.message}", true)
             false
         }
     }
 
     fun answerCall(callId: Int) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         callMap[callId]?.let { call ->
             try {
-                val prm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_OK }
+                val prm = CallOpParam(true).apply { statusCode = pjsip_status_code.PJSIP_SC_OK }
                 call.answer(prm)
-            } catch (e: Throwable) {
-                Log.e(TAG, "answerCall failed: ${e.message}")
-            }
+            } catch (e: Throwable) { }
         }
     }
 
     fun hangupCall(callId: Int = -1) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         val id = if (callId >= 0) callId else _callSession.value?.callId ?: return
-        callMap[id]?.let { call ->
+        val call = callMap[id]
+        if (call != null) {
             try {
                 val prm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_DECLINE }
                 call.hangup(prm)
-            } catch (e: Throwable) {
-                Log.e(TAG, "hangup failed: ${e.message}")
-            }
+            } catch (e: Throwable) { }
+        } else {
+            _callSession.value = null
         }
-        _callSession.value = null
-        callMap.remove(id)
     }
 
     fun setMute(muted: Boolean) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         _callSession.value?.let { session ->
             callMap[session.callId]?.let { call ->
                 try {
@@ -203,9 +310,7 @@ object SipEngine {
                         }
                     }
                     _callSession.value = session.copy(isMuted = muted)
-                } catch (e: Throwable) {
-                    Log.e(TAG, "setMute failed: ${e.message}")
-                }
+                } catch (e: Throwable) { }
             }
         }
     }
@@ -214,31 +319,8 @@ object SipEngine {
         _callSession.value = _callSession.value?.copy(isSpeaker = enabled)
     }
 
-    private var recorder: AudioMediaRecorder? = null
-
-    fun toggleRecording() {
-        endpoint?.libRegisterThread("SipEngineThread")
-        val session = _callSession.value ?: return
-        if (session.isRecording) {
-            try {
-                recorder?.delete()
-                recorder = null
-                _callSession.value = session.copy(isRecording = false)
-            } catch (e: Throwable) { }
-        } else {
-            try {
-                val fileName = "rec_${System.currentTimeMillis()}.wav"
-                // Assuming we have access to context for cache dir or using external
-                // For now, let's use a placeholder path or assume caller provides it.
-                // But SipEngine is an object, it doesn't have context unless we pass it.
-                // We'll use a fixed path for now in app's private files if we had context.
-                // Let's assume startRecording(path) is better.
-            } catch (e: Throwable) { }
-        }
-    }
-
     fun startRecording(filePath: String) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         try {
             recorder?.delete()
             recorder = AudioMediaRecorder()
@@ -251,8 +333,7 @@ object SipEngine {
                         val mi = ci.media.get(i)
                         if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO && 
                             mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
-                            val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index))
-                            // Record both sides
+                            val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index.toLong()))
                             aud.startTransmit(recorder)
                             endpoint?.audDevManager()?.captureDevMedia?.startTransmit(recorder)
                         }
@@ -266,7 +347,7 @@ object SipEngine {
     }
 
     fun stopRecording() {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         try {
             recorder?.delete()
             recorder = null
@@ -275,6 +356,7 @@ object SipEngine {
     }
 
     fun sendDtmf(digit: Char) {
+        registerCurrentThread()
         _callSession.value?.let { session ->
             callMap[session.callId]?.let { call ->
                 try { call.dialDtmf(digit.toString()) } catch (e: Throwable) { }
@@ -283,7 +365,7 @@ object SipEngine {
     }
 
     fun holdCall(onHold: Boolean) {
-        endpoint?.libRegisterThread("SipEngineThread")
+        registerCurrentThread()
         _callSession.value?.let { session ->
             callMap[session.callId]?.let { call ->
                 try {
@@ -296,23 +378,57 @@ object SipEngine {
     }
 
     private fun configureCodecs(preferred: PreferredCodec, ecEnabled: Boolean, nsEnabled: Boolean, agcEnabled: Boolean) {
+        val ep = endpoint ?: return
         try {
-            val ep = endpoint ?: return
-            PreferredCodec.values().forEach { codec ->
-                val prio = if (codec == preferred) codec.priority else (codec.priority - 100).coerceAtLeast(0)
-                ep.codecSetPriority(codec.codecName, prio.toShort())
+            val codecs = ep.codecEnum2()
+            for (i in 0 until codecs.size) {
+                val codec = codecs.get(i)
+                val codecId = codec.codecId
+                val name = codecId.lowercase()
+                
+                // Keep only G722, PCMA, PCMU, and OPUS. Disable all others (priority = 0)
+                val isPreferred = when (preferred) {
+                    PreferredCodec.OPUS -> name.contains("opus")
+                    PreferredCodec.G722 -> name.contains("g722") && !name.contains("g7221")
+                    PreferredCodec.G711U -> name.contains("pcmu")
+                    PreferredCodec.G711A -> name.contains("pcma")
+                }
+                
+                val keep = when (preferred) {
+                    PreferredCodec.OPUS -> name.contains("opus") || name.contains("pcma") || name.contains("pcmu")
+                    PreferredCodec.G722 -> (name.contains("g722") && !name.contains("g7221")) || name.contains("pcma") || name.contains("pcmu")
+                    PreferredCodec.G711U, PreferredCodec.G711A -> name.contains("pcmu") || name.contains("pcma")
+                }
+                
+                if (keep) {
+                    val priority = if (isPreferred) 250 else 150
+                    ep.codecSetPriority(codecId, priority.toShort())
+                } else {
+                    ep.codecSetPriority(codecId, 0.toShort())
+                }
             }
-        } catch (e: Throwable) { }
+        } catch (e: Throwable) {
+            log("Error configuring codecs: ${e.message}", true)
+        }
     }
 
     fun destroy() {
         try {
+            registerCurrentThread()
             callMap.values.forEach { it.delete() }
             callMap.clear()
             accountMap.values.forEach { it.delete() }
             accountMap.clear()
+            
+            recorder?.delete()
+            recorder = null
+            
             endpoint?.libDestroy()
+            endpoint?.delete()
             endpoint = null
+            
+            logWriter?.delete()
+            logWriter = null
         } catch (e: Throwable) { }
     }
 
@@ -320,12 +436,14 @@ object SipEngine {
         override fun onRegState(prm: OnRegStateParam) {
             try {
                 val ai = info
-                val status = if (ai.regIsActive) RegStatus.REGISTERED else RegStatus.UNREGISTERED
-                Log.i(TAG, "onRegState: $accountId -> $status")
+                val status = when {
+                    ai.regIsActive -> RegStatus.REGISTERED
+                    ai.regStatus >= 300 -> RegStatus.ERROR
+                    else -> RegStatus.UNREGISTERED
+                }
+                log("Account $accountId reg status: $status (code=${ai.regStatus}, reason=${ai.regStatusText})")
                 _registrationEvents.value = Pair(accountId, status)
-            } catch (e: Throwable) {
-                Log.e(TAG, "onRegState error: ${e.message}")
-            }
+            } catch (e: Throwable) { }
         }
 
         override fun onIncomingCall(prm: OnIncomingCallParam) {
@@ -333,11 +451,14 @@ object SipEngine {
                 val call = PjCall(this, prm.callId)
                 callMap[prm.callId] = call
                 
-                // Send 180 Ringing immediately
-                val opPrm = CallOpParam().apply { 
-                    statusCode = pjsip_status_code.PJSIP_SC_RINGING 
+                val opPrm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_RINGING }
+                try {
+                    call.answer(opPrm)
+                } catch (e: Throwable) {
+                    call.delete()
+                    callMap.remove(prm.callId)
+                    throw e
                 }
-                call.answer(opPrm)
 
                 val ci = call.info
                 val session = CallSession(
@@ -350,17 +471,16 @@ object SipEngine {
                 )
                 _callSession.value = session
                 onIncomingCall?.invoke(session)
-            } catch (e: Throwable) {
-                Log.e(TAG, "Error in onIncomingCall: ${e.message}")
-            }
+            } catch (e: Throwable) { }
         }
     }
 
-    class PjCall(acct: Account, id: Int = -1) : Call(acct, id) {
+    class PjCall(acct: Account, callId: Int = -1) : Call(acct, callId) {
         override fun onCallState(prm: OnCallStateParam) {
             try {
+                val currentCallId = getId()
                 val ci = info
-                Log.i(TAG, "onCallState changed: ${ci.state} (${ci.stateText})")
+                log("Call $currentCallId state changed to ${ci.stateText} (code=${ci.lastStatusCode}, reason=${ci.lastReason})")
                 val newState = when (ci.state) {
                     pjsip_inv_state.PJSIP_INV_STATE_CALLING -> CallState.CALLING
                     pjsip_inv_state.PJSIP_INV_STATE_INCOMING -> CallState.INCOMING
@@ -371,18 +491,40 @@ object SipEngine {
                     else -> CallState.IDLE
                 }
                 
-                // If call failed (not confirmed and moved to disconnected), 
-                // we should ensure it's removed from map.
                 if (newState == CallState.DISCONNECTED) {
-                    Log.i(TAG, "Call disconnected. ID: ${this.id}")
-                    callMap.remove(this.id)
+                    log("Call $currentCallId DISCONNECTED (code=${ci.lastStatusCode}, reason=${ci.lastReason})")
+                    callMap.remove(currentCallId)
                     _callSession.value = null
+                    
+                    SipConnectionService.getConnection(currentCallId)?.let { conn ->
+                        conn.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.REMOTE))
+                        conn.destroy()
+                        SipConnectionService.removeConnection(currentCallId)
+                    }
+                    
+                    val callToDelete = this
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        try {
+                            callToDelete.delete()
+                        } catch (e: Throwable) {
+                            Log.e("SipEngine", "Failed to delete call on main loop", e)
+                        }
+                    }
                 } else {
-                    _callSession.value = _callSession.value?.copy(state = newState)
+                    _callSession.value = _callSession.value?.copy(state = newState, callId = currentCallId)
+                    
+                    SipConnectionService.getConnection(currentCallId)?.let { conn ->
+                        when (newState) {
+                            CallState.CONFIRMED -> conn.setActive()
+                            CallState.EARLY -> if (_callSession.value?.direction == CallDirection.OUTGOING) {
+                                conn.setRinging()
+                            }
+                            CallState.CONNECTING -> conn.setDialing()
+                            else -> {}
+                        }
+                    }
                 }
-            } catch (e: Throwable) {
-                Log.e(TAG, "onCallState error: ${e.message}")
-            }
+            } catch (e: Throwable) { }
         }
 
         override fun onCallMediaState(prm: OnCallMediaStateParam) {
@@ -392,9 +534,14 @@ object SipEngine {
                     val mi = ci.media.get(i)
                     if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
                         mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
-                        val aud = AudioMedia.typecastFromMedia(getMedia(i.toLong()))
-                        endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
+                        val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
                         aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
+                        endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
+                        
+                        recorder?.let { 
+                            aud.startTransmit(it)
+                            endpoint?.audDevManager()?.captureDevMedia?.startTransmit(it)
+                        }
                     }
                 }
             } catch (e: Throwable) { }

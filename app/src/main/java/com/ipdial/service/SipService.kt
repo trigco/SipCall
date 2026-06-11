@@ -16,6 +16,7 @@ import com.ipdial.data.model.RegStatus
 import com.ipdial.data.repository.AccountRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 
 class SipService : Service() {
 
@@ -30,6 +31,7 @@ class SipService : Service() {
         const val ACTION_HANGUP = "com.ipdial.HANGUP"
         const val ACTION_START = "com.ipdial.START"
         const val ACTION_STOP = "com.ipdial.STOP"
+        const val ACTION_TEST_CALL = "com.ipdial.TEST_CALL"
 
         fun start(context: Context) {
             val intent = Intent(context, SipService::class.java).apply { action = ACTION_START }
@@ -51,8 +53,14 @@ class SipService : Service() {
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         repo = AccountRepository(applicationContext)
         createNotificationChannels()
+        TelecomHelper.registerPhoneAccount(applicationContext)
         SipEngine.init(applicationContext)
-        SipEngine.onIncomingCall = { session -> showIncomingCallNotification(session.remoteDisplayName, session.callId) }
+        SipEngine.onIncomingCall = { session -> 
+            // Report to Telecom for basic integration (busy signal, system call management)
+            TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, session.remoteDisplayName)
+
+            showIncomingCallNotification(session.remoteDisplayName, session.callId)
+        }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
@@ -60,6 +68,19 @@ class SipService : Service() {
             startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
         }
         
+        scope.launch {
+            try {
+                val accountsList = repo.accounts.first()
+                accountsList.forEach { acc ->
+                    if (acc.codec != com.ipdial.data.model.PreferredCodec.G711A) {
+                        repo.saveAccount(acc.copy(codec = com.ipdial.data.model.PreferredCodec.G711A))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SipService", "Failed to force G711A codec", e)
+            }
+        }
+
         registerAccountsFromDataStore()
         observeCallState()
     }
@@ -78,6 +99,59 @@ class SipService : Service() {
             }
             ACTION_HANGUP -> SipEngine.hangupCall()
             ACTION_STOP -> stopSelf()
+            ACTION_TEST_CALL -> {
+                val number = intent.getStringExtra("number") ?: "123"
+                scope.launch {
+                    try {
+                        val accountsList = repo.accounts.first()
+                        val acc = accountsList.firstOrNull { it.isEnabled }
+                        if (acc != null) {
+                            Log.d("SipService", "Test calling $number with account ${acc.id}")
+                            
+                            val transportSuffix = when (acc.transport) {
+                                com.ipdial.data.model.Transport.TCP -> ";transport=tcp"
+                                com.ipdial.data.model.Transport.TLS -> ";transport=tls"
+                                else -> ""
+                            }
+
+                            val finalUri = if (number.contains("@")) {
+                                val base = if (number.startsWith("sip:")) number else "sip:$number"
+                                if (!base.contains("transport=") && transportSuffix.isNotEmpty()) {
+                                    base + transportSuffix
+                                } else {
+                                    base
+                                }
+                            } else {
+                                var num = number.removePrefix("sip:")
+                                if (num.all { it.isDigit() }) {
+                                    if (num.length == 11 && num.startsWith("0")) {
+                                        num = "+880${num.drop(1)}"
+                                    } else if (num.length == 10 && num.startsWith("1")) {
+                                        num = "+880$num"
+                                    }
+                                }
+
+                                val host = if (acc.port != null && acc.port > 0 && !acc.domain.contains(":")) {
+                                    "${acc.domain}:${acc.port}"
+                                } else {
+                                    acc.domain
+                                }
+                                "sip:$num@$host$transportSuffix"
+                            }
+                            
+                            Log.d("SipService", "Dialing URI: $finalUri")
+                            
+                            Handler(Looper.getMainLooper()).post {
+                                SipEngine.makeCall(acc.id, finalUri)
+                            }
+                        } else {
+                            Log.e("SipService", "Test call failed: No enabled account")
+                        }
+                    } catch (e: Exception) {
+                        Log.e("SipService", "Test call failed with exception", e)
+                    }
+                }
+            }
         }
         return START_STICKY
     }
@@ -108,21 +182,23 @@ class SipService : Service() {
 
     private fun observeCallState() {
         scope.launch {
-            SipEngine.callSession.collectLatest { session ->
+            SipEngine.callSession.collect { session ->
                 if (session == null) {
-                    lastSession?.let {
+                    val sessionToLog = lastSession
+                    if (sessionToLog != null) {
                         val duration = if (callStartTime > 0) (System.currentTimeMillis() - callStartTime) / 1000 else 0L
                         val entry = com.ipdial.data.model.CallLogEntry(
-                            accountId = it.accountId,
-                            remoteUri = it.remoteUri,
-                            remoteDisplayName = it.remoteDisplayName,
-                            direction = it.direction,
+                            accountId = sessionToLog.accountId,
+                            remoteUri = sessionToLog.remoteUri,
+                            remoteDisplayName = sessionToLog.remoteDisplayName,
+                            direction = sessionToLog.direction,
                             timestampMs = System.currentTimeMillis(),
                             durationSeconds = duration,
-                            missed = !lastWasConfirmed && it.direction == CallDirection.INCOMING
+                            missed = !lastWasConfirmed && sessionToLog.direction == CallDirection.INCOMING
                         )
-                        scope.launch {
-                            com.ipdial.data.repository.CallLogRepository(applicationContext).insert(entry)
+                        // Use a separate scope to ensure insertion completes
+                        CoroutineScope(Dispatchers.IO).launch {
+                            com.ipdial.data.repository.CallLogRepository.getInstance(applicationContext).insert(entry)
                         }
                     }
                     restoreAudio()
@@ -133,6 +209,7 @@ class SipService : Service() {
                     lastSession = null
                 } else {
                     lastSession = session
+                    
                     when (session.state) {
                         CallState.CONFIRMED -> {
                             cancelIncomingNotification()

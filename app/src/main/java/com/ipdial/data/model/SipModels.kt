@@ -9,7 +9,7 @@ data class SipAccount(
     val password: String = "",
     val domain: String = "",
     val proxy: String = "",          // Optional outbound proxy
-    val port: Int = 5060,
+    val port: Int? = null,
     val transport: Transport = Transport.UDP,
     val isEnabled: Boolean = true,
     val isDefault: Boolean = false,
