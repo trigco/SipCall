@@ -286,11 +286,12 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             SipEngine.stopRecording()
         } else {
             // Priority: Internal storage as requested
-            val folder = java.io.File(getApplication<Application>().filesDir, "recordings")
+            val baseDir = getApplication<Application>().getExternalFilesDir(android.os.Environment.DIRECTORY_MUSIC)
+            val folder = java.io.File(baseDir, "IPDialRecordings")
             try {
                 if (!folder.exists()) folder.mkdirs()
-                val recFile = java.io.File(folder, "IPDial_${System.currentTimeMillis()}.m4a")
-                // Format codec is handled by SipEngine (AAC)
+                val recFile = java.io.File(folder, "IPDial_${System.currentTimeMillis()}.wav")
+                // Using PJSIP internal WAV recorder (AAC natively locked by SIP mic)
                 SipEngine.startRecording(recFile.absolutePath)
             } catch (e: Exception) {
                 android.util.Log.e("SipViewModel", "Recording failed", e)
