@@ -268,7 +268,8 @@ fun IPDialApp(
                     if (activeCallSession != null) {
                         when {
                             activeCallSession.direction == CallDirection.INCOMING &&
-                                    activeCallSession.state == CallState.INCOMING -> {
+                                    (activeCallSession.state == CallState.INCOMING || 
+                                     activeCallSession.state == CallState.EARLY) -> {
                                 IncomingCallScreen(vm = vm, session = activeCallSession)
                             }
                             else -> {
