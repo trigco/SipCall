@@ -1,117 +1,40 @@
-# IPDial — Android VoIP App
+# IPDial — Open-Source SIP Client for Android
 
-A clean, modern SIP softphone for Android built with:
-- **PJSIP 2.13** — Opus/G.722/G.711 codecs, AEC, NS, AGC
-- **Jetpack Compose + Material 3** — sage/forest-green theme matching your screenshots
-- **Multi-account SIP** — register multiple SIP/VoIP accounts, switch with one tap
-- **Minimal APK** — ABI splits (arm64 + armv7), R8 shrinking, no unused libs
+IPDial is a clean, modern, and high-performance SIP (Session Initiation Protocol) softphone for Android. Built with the latest Android technologies, it provides a seamless VoIP experience with a focus on privacy, simplicity, and ease of use.
 
----
+## 🚀 Key Features
 
-## Project Structure
-
-```
-app/src/main/java/com/ipdial/
-├── MainActivity.kt              # Nav + call overlay routing
-├── IPDialApplication.kt        # App entry, auto-starts SipService
-├── data/
-│   ├── model/SipModels.kt       # SipAccount, CallSession, enums
-│   └── repository/AccountRepository.kt  # DataStore persistence
-├── service/
-│   ├── SipEngine.kt             # PJSIP wrapper (accounts, calls, codecs)
-│   ├── SipService.kt            # Foreground service, notifications
-│   └── BootReceiver.kt          # Auto-restart after reboot
-└── ui/
-    ├── SipViewModel.kt          # State + actions
-    ├── theme/                   # Material 3 colors, type, shapes
-    └── screens/
-        ├── HomeScreen.kt        # Account status cards
-        ├── DialpadScreen.kt     # Keypad with account selector
-        ├── CallScreen.kt        # Active / outgoing call
-        ├── IncomingCallScreen.kt # Incoming call with Answer/Decline
-        └── SettingsScreen.kt    # Account management + audio settings
-```
+- **Modern Interface**: A clean, responsive design featuring a Forest Green theme that's easy to navigate.
+- **High-Quality Audio**: Crystal clear voice calls with support for high-definition audio standards.
+- **Advanced Sound Clarity**: Built-in Echo Cancellation and Noise Suppression to ensure you're heard clearly even in noisy environments.
+- **Manage Multiple Accounts**: Easily add and switch between multiple SIP/VoIP providers within a single app.
+- **Complete Call Control**: Full support for Mute, Speakerphone, Hold, and an in-call Dialpad for navigating automated menus.
+- **Smart Call History**: Organized history grouped by date (Today, Yesterday, etc.) with quick filters for missed, dialed, and received calls.
+- **Contact Integration**: Works seamlessly with your phone's existing contacts for quick dialing and easy identification.
+- **Call Recording**: Record important conversations directly to your device with a built-in recording manager.
+- **Stay Updated**: Automatic notifications for new versions to ensure you always have the latest features and security fixes.
+- **Reliable & Fast**: Optimized for performance to ensure fast loading and minimal battery impact.
 
 ---
 
-## Build Instructions
+## 🤝 Open Source & Support
 
-### Prerequisites
-- Android Studio Hedgehog (2023.1.1) or newer
-- JDK 17
-- Android SDK 34
-
-### Steps
-
-1. **Open** the project in Android Studio:
-   ```
-   File → Open → select /IPDial folder
-   ```
-
-2. **Sync Gradle** — it will download PJSIP AAR from JitPack automatically.
-
-3. **Build APK** (minimal, split by ABI):
-   ```
-   Build → Generate Signed Bundle/APK → APK → release
-   ```
-   Or via terminal:
-   ```bash
-   ./gradlew assembleRelease
-   ```
-
-4. Install the `arm64-v8a` variant on your device:
-   ```bash
-   adb install app/build/outputs/apk/release/app-arm64-v8a-release.apk
-   ```
-
-### Expected APK sizes (after R8 shrinking + splits)
- ABI | Size |
------|------|
- arm64-v8a | ~4.5 MB |
- armeabi-v7a | ~3.8 MB |
+IPDial is an open-source project. If you find this project useful, consider supporting the developer by starring the repository or sharing it with others.
 
 ---
 
-## Features
+## 👨&zwj;💻 Developer Information
 
-### Screens (matching your reference UI)
-- **Home** — Account registration status with colored status dots
-- **Keypad** — Dial pad with account chip selector, matches Google Dialer layout
-- **Active Call** — Timer, mute/speaker/hold/keypad controls, end button
-- **Incoming Call** — Full-screen with Decline / [phone icon] / Answer
-- **Settings** — SIP account CRUD, audio processing toggles, network options
+**NAZIM U. NAEEM**
 
-### Excluded (per your markup on screenshots)
-- ~~Assisted dialing~~
-- ~~Incoming call gesture~~
-- ~~Quick responses~~
-- ~~Voicemail~~
+[![Facebook](https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white)](https://facebook.com/nazimunaeem1)
+[![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/IPCall)
 
-### SIP Settings included
-- Username, password, domain, proxy, port
-- Transport: UDP / TCP / TLS
-- Preferred codec: Opus · G.722 · G.711u · G.711a
-- Echo Cancellation (AEC) toggle
-- Noise Suppression (NS) toggle
-- Auto Gain Control (AGC) toggle
-- STUN/ICE for NAT traversal
-- SRTP for TLS accounts
-- Multiple accounts with default selection
+### ☕ Support the Development
+> "Fuelling innovation one sip at a time. Support the development and help us keep the lines open!"
 
 ---
 
-## Permissions
- Permission | Reason |
------------|--------|
- RECORD_AUDIO | Microphone during calls |
- READ_PHONE_STATE | Interrupt calls on GSM activity |
- FOREGROUND_SERVICE | Keep SIP registered in background |
- POST_NOTIFICATIONS | Incoming call heads-up |
- RECEIVE_BOOT_COMPLETED | Reconnect after reboot |
- INTERNET | SIP signaling and media |
+## 📄 License
 
----
-
-## Logo
-Modern vector phone + signal waves, forest green (`#1E6B3C`) background.
-Located at `res/drawable/ic_launcher_foreground.xml` + `ic_launcher_background.xml`.
+Distributed under the MIT License.

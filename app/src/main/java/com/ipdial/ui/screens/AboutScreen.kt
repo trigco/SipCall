@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -125,11 +126,20 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(24.dp))
-            Text(
-                text = "IPDial",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.padding(horizontal = 16.dp)
+            ) {
+                Text(
+                    text = "IPDial",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = "Version $currentVersion",
                 style = MaterialTheme.typography.bodyMedium,
@@ -206,54 +216,6 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     context.startActivity(intent)
                 }
             )
-            
-            Spacer(Modifier.height(48.dp))
-            
-            DonationCardLarge(bkashNumber = "01728867695")
-        }
-    }
-}
-
-@Composable
-fun DonationCardLarge(bkashNumber: String) {
-    val clipboardManager = LocalClipboardManager.current
-    
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp), 
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = "Fuelling innovation. Support the development and help us keep the lines open!",
-                style = MaterialTheme.typography.bodyMedium,
-                textAlign = TextAlign.Center
-            )
-            Spacer(Modifier.height(12.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Donate via bKash: $bkashNumber",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(
-                    onClick = { clipboardManager?.setText(AnnotatedString(bkashNumber)) },
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.ContentCopy,
-                        contentDescription = "Copy",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
         }
     }
 }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -180,6 +181,14 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearDial() { _dialString.value = "" }
+
+    fun prefillDialer(number: String) { _dialString.value = number }
+
+    fun deleteCallLog(entry: CallLogEntry) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.ipdial.data.repository.CallLogRepository.getInstance(getApplication()).delete(entry)
+        }
+    }
 
     fun selectAccount(id: String) { _selectedAccountId.value = id }
 

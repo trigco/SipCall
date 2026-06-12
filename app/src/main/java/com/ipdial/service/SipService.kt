@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
+import android.media.Ringtone
+import android.media.RingtoneManager
 import android.os.*
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -236,6 +238,29 @@ class SipService : Service() {
     private var callStartTime = 0L
 
     private var lastSession: com.ipdial.data.model.CallSession? = null
+    
+    private var ringtone: Ringtone? = null
+
+    private fun playRingtone() {
+        if (ringtone?.isPlaying == true) return
+        try {
+            val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            ringtone = RingtoneManager.getRingtone(applicationContext, uri)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                ringtone?.isLooping = true
+            }
+            ringtone?.play()
+        } catch (e: Exception) {
+            Log.e("SipService", "Failed to play ringtone", e)
+        }
+    }
+
+    private fun stopRingtone() {
+        try {
+            ringtone?.stop()
+            ringtone = null
+        } catch (e: Exception) {}
+    }
 
     private fun observeCallState() {
         scope.launch {
@@ -258,6 +283,7 @@ class SipService : Service() {
                             com.ipdial.data.repository.CallLogRepository.getInstance(applicationContext).insert(entry)
                         }
                     }
+                    stopRingtone()
                     restoreAudio()
                     releaseWakeLock()
                     cancelIncomingNotification()
@@ -268,7 +294,11 @@ class SipService : Service() {
                     lastSession = session
                     
                     when (session.state) {
+                        CallState.INCOMING -> {
+                            playRingtone()
+                        }
                         CallState.CONFIRMED -> {
+                            stopRingtone()
                             cancelIncomingNotification()
                             routeAudioToEarpiece()
                             acquireWakeLock()

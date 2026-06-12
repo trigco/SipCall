@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.blur
 import coil.compose.AsyncImage
 import com.ipdial.data.model.CallSession
 import com.ipdial.ui.SipViewModel
@@ -57,19 +58,43 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
     }
     val displayName = contact?.name ?: session.remoteDisplayName.ifBlank { vm.cleanUri(session.remoteUri) }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
+    val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
+    val isFullScreenPhoto = callsCardsEnabled && contact?.photoUri != null
+    val textColor = if (isFullScreenPhoto) Color.White else MaterialTheme.colorScheme.onBackground
+    val subtitleColor = if (isFullScreenPhoto) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (isFullScreenPhoto) {
+            AsyncImage(
+                model = contact!!.photoUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(24.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent, Color.Black.copy(alpha = 0.8f))
+                        )
+                    )
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        }
+
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         Spacer(Modifier.height(64.dp))
 
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = "Incoming Call via $viaLine",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = subtitleColor,
             )
         }
 
@@ -82,7 +107,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                 fontSize = 34.sp
             ),
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onBackground,
+            color = textColor,
             modifier = Modifier.padding(horizontal = 24.dp)
         )
 
@@ -91,7 +116,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             Text(
                 text = vm.cleanUri(session.remoteUri),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = subtitleColor
             )
         }
 
@@ -198,6 +223,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                         },
                         modifier = Modifier.size(36.dp)
                     )
+                }
                 }
             }
         }

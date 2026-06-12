@@ -238,15 +238,7 @@ fun IPDialApp(
                             },
                             icon = { Icon(NavDest.Recordings.icon, null) }
                         )
-                        NavigationDrawerItem(
-                            label = { Text("Activity Log") },
-                            selected = currentRoute == NavDest.Logs.route,
-                            onClick = {
-                                scope.launch { drawerState.close() }
-                                navController.navigate(NavDest.Logs.route)
-                            },
-                            icon = { Icon(NavDest.Logs.icon, null) }
-                        )
+
                         NavigationDrawerItem(
                             label = { Text("Settings") },
                             selected = currentRoute == NavDest.Settings.route,
@@ -315,7 +307,15 @@ fun IPDialApp(
                             composable(NavDest.Home.route) { 
                                 HomeScreen(
                                     vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    onOpenDrawer = { scope.launch { drawerState.open() } },
+                                    onEditBeforeCall = { number ->
+                                        vm.prefillDialer(number)
+                                        navController.navigate(NavDest.Keypad.route) {
+                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                            launchSingleTop = true
+                                            restoreState = true
+                                        }
+                                    }
                                 ) 
                             }
                             composable(NavDest.Keypad.route) { 

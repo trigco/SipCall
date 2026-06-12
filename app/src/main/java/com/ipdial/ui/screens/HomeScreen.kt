@@ -21,6 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
+import android.widget.Toast
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -33,16 +36,18 @@ import java.util.*
 @Composable
 fun HomeScreen(
     vm: SipViewModel, 
-    onOpenDrawer: () -> Unit
+    onOpenDrawer: () -> Unit,
+    onEditBeforeCall: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
     val accounts  by vm.accounts.collectAsState()
     val callLog   by vm.callLog.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val contactsState by vm.contacts.collectAsState()
     
-    var filterIndex by remember { mutableStateOf(0) } // 0: History, 1: Contacts
-    val filterLabels = remember { listOf("History", "Contacts") }
+    var filterIndex by remember { mutableStateOf(0) } // 0: History, 1: Missed, 2: Dialed, 3: Received, 4: Contacts
+    val filterLabels = remember { listOf("History", "Missed", "Dialed", "Received", "Contacts") }
 
     // O(1) map for contact lookup by phone numbers (exact and last 10 digits for suffix matching)
     val contactLookupMap = remember(contactsState) {
@@ -62,7 +67,7 @@ fun HomeScreen(
     }
 
     val filteredContacts = remember(contactsState, searchQuery, filterIndex) {
-        if (filterIndex != 1) emptyList()
+        if (filterIndex != 4) emptyList()
         else contactsState.filter {
             it.name.contains(searchQuery, ignoreCase = true) ||
                     it.numbers.any { num -> num.contains(searchQuery) }
@@ -70,11 +75,19 @@ fun HomeScreen(
     }
 
     val filteredLog = remember(callLog, filterIndex, searchQuery) {
-        if (filterIndex == 1) return@remember emptyList()
+        if (filterIndex == 4) return@remember emptyList()
         callLog.filter { entry ->
-            searchQuery.isBlank() || 
+            val matchesSearch = searchQuery.isBlank() || 
                 entry.remoteDisplayName.contains(searchQuery, ignoreCase = true) || 
                 entry.remoteUri.contains(searchQuery)
+            
+            val matchesFilter = when (filterIndex) {
+                1 -> entry.missed
+                2 -> entry.direction == CallDirection.OUTGOING
+                3 -> entry.direction == CallDirection.INCOMING && !entry.missed
+                else -> true
+            }
+            matchesSearch && matchesFilter
         }
     }
 
@@ -111,7 +124,7 @@ fun HomeScreen(
             labels = filterLabels
         )
 
-        if (filterIndex == 1) {
+        if (filterIndex == 4) {
             val sortedContacts = remember(filteredContacts) {
                 filteredContacts.sortedBy { it.name.trim().lowercase() }
             }
@@ -194,11 +207,18 @@ fun HomeScreen(
                                     contactLookupMap[cleanNumber]
                                 }
                             }
+                            val numberToCopy = cleanUri(entry.remoteUri).filter { it.isDigit() || it == '+' }
                             CallLogRow(
                                 entry   = entry,
                                 account = accounts.firstOrNull { it.id == entry.accountId },
                                 contact = contact,
-                                onCall  = { vm.callBack(entry) }
+                                onCall  = { vm.callBack(entry) },
+                                onCopy = {
+                                    clipboardManager.setText(AnnotatedString(numberToCopy))
+                                    Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
+                                },
+                                onEdit = { onEditBeforeCall(numberToCopy) },
+                                onDelete = { vm.deleteCallLog(entry) }
                             )
                         }
                     }
@@ -216,31 +236,38 @@ fun SearchBarRow(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        shape = RoundedCornerShape(28.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
+                .height(44.dp)
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextField(
+            androidx.compose.foundation.text.BasicTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = { Text("Search contacts") },
                 modifier = Modifier.weight(1f),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
+                singleLine = true,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface
                 ),
-                singleLine = true
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
+                decorationBox = { innerTextField ->
+                    if (query.isEmpty()) {
+                        Text(
+                            "Search contacts",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    innerTextField()
+                }
             )
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
@@ -289,13 +316,18 @@ fun FilterChipRow(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CallLogRow(
     entry: CallLogEntry,
     account: SipAccount?,
     contact: Contact?,
-    onCall: () -> Unit
+    onCall: () -> Unit,
+    onCopy: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
     val viaLabel  = account?.label?.ifBlank { account.domain } ?: "SIP"
     val callerName = contact?.name ?: entry.remoteDisplayName.ifBlank { cleanUri(entry.remoteUri) }
     val timeStr   = formatTime(entry.timestampMs)
@@ -307,7 +339,10 @@ fun CallLogRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onCall() }
+                .combinedClickable(
+                    onClick = onCall,
+                    onLongClick = { expanded = true }
+                )
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -383,6 +418,24 @@ fun CallLogRow(
                     modifier = Modifier.size(22.dp)
                 )
             }
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Copy number") },
+                onClick = { expanded = false; onCopy() }
+            )
+            DropdownMenuItem(
+                text = { Text("Edit before call") },
+                onClick = { expanded = false; onEdit() }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete") },
+                onClick = { expanded = false; onDelete() }
+            )
         }
     }
 }

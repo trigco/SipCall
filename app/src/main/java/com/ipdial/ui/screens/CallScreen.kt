@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.blur
 import coil.compose.AsyncImage
 import com.ipdial.data.model.CallDirection
 import com.ipdial.data.model.CallSession
@@ -57,6 +58,11 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
 
     var showDialpad by remember { mutableStateOf(false) }
     var elapsedSeconds by remember { mutableStateOf(0L) }
+    
+    val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
+    val isFullScreenPhoto = callsCardsEnabled && contact?.photoUri != null
+    val textColor = if (isFullScreenPhoto) Color.White else MaterialTheme.colorScheme.onBackground
+    val subtitleColor = if (isFullScreenPhoto) Color.White.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
 
     // Call timer
     LaunchedEffect(session.state) {
@@ -73,6 +79,24 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
+        if (isFullScreenPhoto) {
+            AsyncImage(
+                model = contact!!.photoUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize().blur(24.dp)
+            )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colors = listOf(Color.Black.copy(alpha = 0.5f), Color.Transparent, Color.Black.copy(alpha = 0.8f))
+                        )
+                    )
+            )
+        }
+        
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -84,7 +108,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 Text(
                     text = simLabel,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = subtitleColor,
                 )
                 if (session.state == CallState.CONFIRMED) {
                     Text(
@@ -105,7 +129,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                     fontWeight = FontWeight.Normal,
                     fontSize = if (displayName.length > 16) 28.sp else 36.sp
                 ),
-                color = MaterialTheme.colorScheme.onBackground,
+                color = textColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 24.dp),
             )
@@ -115,7 +139,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 Text(
                     text = vm.cleanUri(session.remoteUri),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = subtitleColor,
                 )
             }
 
@@ -351,7 +375,7 @@ fun PulsingStateLabel(state: CallState) {
     Text(
         text = label,
         style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha),
+        color = Color.White.copy(alpha = alpha),
     )
 }
 

@@ -115,7 +115,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 val darkModeEnabled by vm.darkModeEnabled.collectAsState()
                 SettingsRow(
                     icon = Icons.Default.DisplaySettings,
-                    title = "Display Options",
+                    title = "Dark Mode",
                     subtitle = "Dark mode",
                     trailing = {
                         Switch(checked = darkModeEnabled, onCheckedChange = { vm.setDarkMode(it) })
