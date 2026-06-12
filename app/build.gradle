@@ -63,6 +63,10 @@ android {
 
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += [
+            "-opt-in=androidx.compose.ui.platform.ExperimentalPlatformTextInputApi",
+            "-opt-in=androidx.compose.ui.ExperimentalComposeUiApi"
+        ]
     }
 
     buildFeatures {
