@@ -339,7 +339,11 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             val folder = java.io.File(baseDir, "IPDialRecordings")
             try {
                 if (!folder.exists()) folder.mkdirs()
-                val recFile = java.io.File(folder, "IPDial_${System.currentTimeMillis()}.wav")
+                val sdf = java.text.SimpleDateFormat("yyyyMMddHHmmss", java.util.Locale.US)
+                val dateStr = sdf.format(java.util.Date())
+                val num = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
+                val cleanNum = num.filter { it.isLetterOrDigit() || it == '+' }
+                val recFile = java.io.File(folder, "IPDial_${cleanNum}_${dateStr}.wav")
                 // Using PJSIP internal WAV recorder (AAC natively locked by SIP mic)
                 SipEngine.startRecording(recFile.absolutePath)
             } catch (e: Exception) {

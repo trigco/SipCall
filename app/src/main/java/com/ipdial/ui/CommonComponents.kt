@@ -122,7 +122,7 @@ fun IPDialTopBar(
                 onClick = onOpenDrawer,
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
-                    .size(38.dp)
+                    .size(40.dp)
                     .padding(end = 4.dp)
             ) {
                 Icon(

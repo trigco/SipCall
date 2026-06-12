@@ -22,7 +22,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalTextInputService
+import androidx.compose.ui.platform.InterceptPlatformTextInput
+import kotlinx.coroutines.awaitCancellation
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
@@ -54,10 +55,24 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
     val suggestedContacts = remember(dialString, contacts) {
         if (dialString.isBlank()) emptyList()
-        else contacts.filter { contact ->
-            contact.numbers.any { it.filter { it.isDigit() }.contains(dialString) } ||
-            contact.name.contains(dialString, ignoreCase = true)
-        }.take(5)
+        else {
+            val t9Map = mapOf(
+                'a' to '2', 'b' to '2', 'c' to '2',
+                'd' to '3', 'e' to '3', 'f' to '3',
+                'g' to '4', 'h' to '4', 'i' to '4',
+                'j' to '5', 'k' to '5', 'l' to '5',
+                'm' to '6', 'n' to '6', 'o' to '6',
+                'p' to '7', 'q' to '7', 'r' to '7', 's' to '7',
+                't' to '8', 'u' to '8', 'v' to '8',
+                'w' to '9', 'x' to '9', 'y' to '9', 'z' to '9'
+            )
+            contacts.filter { contact ->
+                val nameT9 = contact.name.lowercase().mapNotNull { t9Map[it] }.joinToString("")
+                contact.numbers.any { it.filter { it.isDigit() }.contains(dialString) } ||
+                contact.name.contains(dialString, ignoreCase = true) ||
+                nameT9.contains(dialString)
+            }.take(5)
+        }
     }
 
     Column(
@@ -161,7 +176,9 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 }
             }
 
-            CompositionLocalProvider(LocalTextInputService provides null) {
+            InterceptPlatformTextInput(
+                interceptor = { _, _ -> awaitCancellation() }
+            ) {
                 BasicTextField(
                     value = dialTextFieldValue,
                     onValueChange = { vm.setDialString(it) },

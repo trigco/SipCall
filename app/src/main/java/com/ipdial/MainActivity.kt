@@ -241,14 +241,15 @@ fun IPDialApp(
                         modifier = Modifier.width(300.dp),
                         drawerShape = androidx.compose.ui.graphics.RectangleShape
                     ) {
-                        Spacer(Modifier.height(16.dp))
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             "Menu",
-                            modifier = Modifier.padding(16.dp),
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             style = MaterialTheme.typography.titleLarge
                         )
-                        Divider()
+                        HorizontalDivider()
                         NavigationDrawerItem(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
                             label = { Text("Home") },
                             selected = currentRoute == NavDest.Home.route,
                             onClick = {
@@ -262,6 +263,7 @@ fun IPDialApp(
                             icon = { Icon(NavDest.Home.icon, null) }
                         )
                         NavigationDrawerItem(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
                             label = { Text("Accounts") },
                             selected = currentRoute == NavDest.Accounts.route,
                             onClick = {
@@ -271,6 +273,7 @@ fun IPDialApp(
                             icon = { Icon(NavDest.Accounts.icon, null) }
                         )
                         NavigationDrawerItem(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
                             label = { Text("Recordings") },
                             selected = currentRoute == NavDest.Recordings.route,
                             onClick = {
@@ -281,6 +284,7 @@ fun IPDialApp(
                         )
 
                         NavigationDrawerItem(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
                             label = { Text("Settings") },
                             selected = currentRoute == NavDest.Settings.route,
                             onClick = {
@@ -290,6 +294,7 @@ fun IPDialApp(
                             icon = { Icon(NavDest.Settings.icon, null) }
                         )
                         NavigationDrawerItem(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
                             label = { Text("About") },
                             selected = currentRoute == NavDest.About.route,
                             onClick = {
