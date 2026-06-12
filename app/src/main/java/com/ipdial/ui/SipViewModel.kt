@@ -44,9 +44,13 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val dndEnabled: StateFlow<Boolean> = repo.dndEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val globalVibrate: StateFlow<Boolean> = repo.globalVibrate
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
     fun setDarkMode(enabled: Boolean) = viewModelScope.launch { repo.setDarkMode(enabled) }
     fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
     fun setDnd(enabled: Boolean) = viewModelScope.launch { repo.setDnd(enabled) }
+    fun setGlobalVibrate(enabled: Boolean) = viewModelScope.launch { repo.setGlobalVibrate(enabled) }
 
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

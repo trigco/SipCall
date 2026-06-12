@@ -170,6 +170,19 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 )
             }
 
+            item {
+                val globalVibrate by vm.globalVibrate.collectAsState()
+                SettingsRow(
+                    icon = Icons.Default.Vibration,
+                    title = "Vibrate on Ring",
+                    subtitle = "Vibrate when receiving incoming calls",
+                    trailing = {
+                        Switch(checked = globalVibrate, onCheckedChange = { vm.setGlobalVibrate(it) })
+                    },
+                    onClick = { vm.setGlobalVibrate(!globalVibrate) }
+                )
+            }
+
             // ── General ───────────────────────────────────────────────────
             item { SettingsSection("General") }
 

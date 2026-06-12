@@ -9,6 +9,9 @@ import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.*
 import android.util.Log
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import android.net.ConnectivityManager
 import android.net.Network
@@ -109,10 +112,20 @@ class SipService : Service() {
     private val activeConfigs = java.util.concurrent.ConcurrentHashMap<String, com.ipdial.data.model.SipAccount>()
     private var isConnected = false
     private var lastNetwork: Network? = null
+    private var vibrator: Vibrator? = null
 
     override fun onCreate() {
         super.onCreate()
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        
+        vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vibratorManager = getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+            vibratorManager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+        }
+        
         repo = AccountRepository(applicationContext)
         createNotificationChannels()
         TelecomHelper.registerPhoneAccount(applicationContext)
@@ -349,6 +362,18 @@ class SipService : Service() {
                 ringtone?.isLooping = true
             }
             ringtone?.play()
+            
+            // Vibrate if setting is enabled
+            kotlinx.coroutines.runBlocking {
+                if (repo.globalVibrate.first()) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        vibrator?.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 1000, 1000), 0))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vibrator?.vibrate(longArrayOf(0, 1000, 1000), 0)
+                    }
+                }
+            }
         } catch (e: Exception) {
             Log.e("SipService", "Failed to play ringtone", e)
         }
@@ -358,6 +383,7 @@ class SipService : Service() {
         try {
             ringtone?.stop()
             ringtone = null
+            vibrator?.cancel()
         } catch (e: Exception) {}
     }
 

@@ -71,7 +71,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                 model = contact!!.photoUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(24.dp)
+                modifier = Modifier.fillMaxSize().blur(4.dp)
             )
             Box(
                 modifier = Modifier
@@ -207,12 +207,42 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             )
         }
 
-                // Rounded Phone Icon (Swiping Handle)
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(offsetX.roundToInt(), 0) }
-                        .shadow(elevation = 8.dp, shape = CircleShape)
-                        .size(96.dp)
+                val infiniteRipple = rememberInfiniteTransition(label = "ripple")
+                val rippleScale by infiniteRipple.animateFloat(
+                    initialValue = 1f,
+                    targetValue = 1.8f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1500, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "rippleScale"
+                )
+                val rippleAlpha by infiniteRipple.animateFloat(
+                    initialValue = 0.5f,
+                    targetValue = 0f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(1500, easing = LinearEasing),
+                        repeatMode = RepeatMode.Restart
+                    ),
+                    label = "rippleAlpha"
+                )
+
+                Box(modifier = Modifier.offset { IntOffset(offsetX.roundToInt(), 0) }, contentAlignment = Alignment.Center) {
+                    if (offsetX == 0f) {
+                        Box(
+                            modifier = Modifier
+                                .size(96.dp)
+                                .graphicsLayer(scaleX = rippleScale, scaleY = rippleScale, alpha = rippleAlpha)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.surface)
+                        )
+                    }
+
+                    // Rounded Phone Icon (Swiping Handle)
+                    Box(
+                        modifier = Modifier
+                            .shadow(elevation = 8.dp, shape = CircleShape)
+                            .size(96.dp)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surface)
                         .draggable(
@@ -242,6 +272,7 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                         },
                         modifier = Modifier.size(36.dp)
                     )
+                }
                 }
                 }
             }

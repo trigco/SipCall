@@ -23,6 +23,7 @@ class AccountRepository(private val context: Context) {
     private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
     private val CALLING_CARDS_KEY = booleanPreferencesKey("calling_cards")
     private val DND_KEY = booleanPreferencesKey("dnd_enabled")
+    private val VIBRATE_KEY = booleanPreferencesKey("global_vibrate")
 
     val accounts: Flow<List<SipAccount>> = context.dataStore.data.map { prefs ->
         val json = prefs[ACCOUNTS_KEY] ?: return@map emptyList()
@@ -37,10 +38,12 @@ class AccountRepository(private val context: Context) {
     val darkModeEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[DARK_MODE_KEY] ?: false }
     val callingCardsEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[CALLING_CARDS_KEY] ?: true }
     val dndEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[DND_KEY] ?: false }
+    val globalVibrate: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[VIBRATE_KEY] ?: true }
 
     suspend fun setDarkMode(enabled: Boolean) = context.dataStore.edit { it[DARK_MODE_KEY] = enabled }
     suspend fun setCallingCards(enabled: Boolean) = context.dataStore.edit { it[CALLING_CARDS_KEY] = enabled }
     suspend fun setDnd(enabled: Boolean) = context.dataStore.edit { it[DND_KEY] = enabled }
+    suspend fun setGlobalVibrate(enabled: Boolean) = context.dataStore.edit { it[VIBRATE_KEY] = enabled }
 
     suspend fun setGlobalRingtone(uri: String?) {
         context.dataStore.edit { prefs ->
