@@ -56,7 +56,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             title = { Text("Update Available") },
             text = {
                 Column {
-                    Text("Version ${updateRelease!!.tag_name.trimStart('v')} is available.")
+                    Text("Version ${updateRelease!!.tagName.trimStart('v')} is available.")
                     if (updateRelease!!.body.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
@@ -70,7 +70,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     showUpdateDialog = false
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease!!.html_url))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease!!.htmlUrl))
                     context.startActivity(intent)
                 }) { Text("Download") }
             },

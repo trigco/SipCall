@@ -25,7 +25,6 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import kotlinx.coroutines.launch
 import com.ipdial.data.model.CallDirection
-import com.ipdial.data.model.RegStatus
 import com.ipdial.data.model.CallState
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.screens.*
@@ -73,7 +72,7 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            val vm: SipViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            val vm: SipViewModel = viewModel()
             val darkMode by vm.darkModeEnabled.collectAsState()
             val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
             IPDialTheme(darkTheme = darkMode || systemDark) {
@@ -152,7 +151,6 @@ fun IPDialApp(
             triggerHangup.value = false
         }
     }
-    val accounts by vm.accounts.collectAsState()
     val navController = rememberNavController()
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStack?.destination?.route
@@ -166,19 +164,19 @@ fun IPDialApp(
 
     LaunchedEffect(Unit) {
         try {
-            val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName
+            val currentVersion = context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0"
             updateRelease = com.ipdial.util.UpdateChecker.checkForUpdates(currentVersion)
-        } catch (e: Exception) {}
+        } catch (_: Exception) {}
     }
 
     if (updateRelease != null) {
         AlertDialog(
             onDismissRequest = { updateRelease = null },
             title = { Text("Update Available") },
-            text = { Text("A new version (${updateRelease?.tag_name}) is available on GitHub. Would you like to download it?\n\n${updateRelease?.body}") },
+            text = { Text("A new version (${updateRelease?.tagName}) is available on GitHub. Would you like to download it?\n\n${updateRelease?.body}") },
             confirmButton = {
                 Button(onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease?.html_url))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease?.htmlUrl))
                     context.startActivity(intent)
                     updateRelease = null
                 }) { Text("Download") }
@@ -286,11 +284,14 @@ fun IPDialApp(
                     }
                 ) { innerPadding ->
                     if (activeCallSession != null) {
-                        when {
-                            activeCallSession.direction == CallDirection.INCOMING &&
-                                    (activeCallSession.state == CallState.INCOMING || 
-                                     activeCallSession.state == CallState.EARLY) -> {
-                                IncomingCallScreen(vm = vm, session = activeCallSession)
+                        when (activeCallSession.direction) {
+                            CallDirection.INCOMING -> {
+                                if (activeCallSession.state == CallState.INCOMING || 
+                                     activeCallSession.state == CallState.EARLY) {
+                                    IncomingCallScreen(vm = vm, session = activeCallSession)
+                                } else {
+                                    CallScreen(vm = vm, session = activeCallSession)
+                                }
                             }
                             else -> {
                                 CallScreen(vm = vm, session = activeCallSession)

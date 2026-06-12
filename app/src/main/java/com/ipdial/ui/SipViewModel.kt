@@ -1,7 +1,6 @@
 package com.ipdial.ui
 
 import android.app.Application
-import android.content.ComponentName
 import android.content.Context
 import android.net.*
 import android.os.Bundle
@@ -186,7 +185,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteCallLog(entry: CallLogEntry) {
         viewModelScope.launch(Dispatchers.IO) {
-            com.ipdial.data.repository.CallLogRepository.getInstance(getApplication()).delete(entry)
+            logRepo.delete(entry)
         }
     }
 

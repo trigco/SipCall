@@ -1,10 +1,10 @@
 package com.ipdial.util
 
-import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import com.google.gson.Gson
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.net.URL
@@ -13,7 +13,11 @@ object UpdateChecker {
     private const val GITHUB_API_URL = "https://api.github.com/repos/nazimunaeem/IPDial/releases/latest"
     private const val TAG = "UpdateChecker"
 
-    data class GitHubRelease(val tag_name: String, val html_url: String, val body: String)
+    data class GitHubRelease(
+        @SerializedName("tag_name") val tagName: String,
+        @SerializedName("html_url") val htmlUrl: String,
+        val body: String
+    )
 
     suspend fun checkForUpdates(currentVersion: String): GitHubRelease? = withContext(Dispatchers.IO) {
         try {
@@ -21,7 +25,7 @@ object UpdateChecker {
             val release = Gson().fromJson(json, GitHubRelease::class.java)
             
             // Assuming version tags are like "v1.1" or "1.1"
-            val latestVersion = release.tag_name.replace("v", "")
+            val latestVersion = release.tagName.replace("v", "")
             if (isNewerVersion(currentVersion, latestVersion)) {
                 return@withContext release
             }
