@@ -42,16 +42,22 @@ fun DonationCardSmall(bkashNumber: String) {
         shape = MaterialTheme.shapes.small
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Support development",
+                    text = "Enjoying IPDial? ☕",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.primary
                 )
+                Text(
+                    text = "Support the developer's sleepless nights with a donation!",
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 16.sp
+                )
+                Spacer(Modifier.height(4.dp))
                 Text(
                     text = "bKash: $bkashNumber",
                     style = MaterialTheme.typography.bodySmall,
@@ -60,12 +66,12 @@ fun DonationCardSmall(bkashNumber: String) {
             }
             IconButton(
                 onClick = { clipboardManager.setText(AnnotatedString(bkashNumber)) },
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(32.dp).padding(start = 8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.ContentCopy,
                     contentDescription = "Copy",
-                    modifier = Modifier.size(16.dp),
+                    modifier = Modifier.size(18.dp),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }

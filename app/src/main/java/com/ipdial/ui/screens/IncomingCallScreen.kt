@@ -71,14 +71,6 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (callVia.isNotBlank()) {
-                Text(
-                    text = "Call via $callVia",
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
         }
 
         Spacer(Modifier.height(32.dp))

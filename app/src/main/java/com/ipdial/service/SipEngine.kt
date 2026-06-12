@@ -220,6 +220,15 @@ object SipEngine {
         }
     }
 
+    fun reconnectAccount(accountId: String) {
+        registerCurrentThread()
+        try {
+            accountMap[accountId]?.setRegistration(true)
+        } catch (e: Throwable) {
+            log("reconnectAccount failed: ${e.message}", true)
+        }
+    }
+
     fun makeCall(accountId: String, destination: String): Boolean {
         registerCurrentThread()
         return try {

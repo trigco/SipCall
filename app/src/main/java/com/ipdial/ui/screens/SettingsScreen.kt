@@ -34,21 +34,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
+fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accounts by vm.accounts.collectAsState()
     val globalRingtone by vm.globalRingtone.collectAsState()
-    
-    var callsCardsEnabled by remember { mutableStateOf(true) }
-    var darkModeEnabled by remember { mutableStateOf(false) }
-    
-    var callVolume by remember { mutableStateOf(0.7f) }
-    var ringVolume by remember { mutableStateOf(0.8f) }
-    var vibrateEnabled by remember { mutableStateOf(true) }
-    var keypadTonesEnabled by remember { mutableStateOf(true) }
-
-    var activeDialog by remember { mutableStateOf<String?>(null) }
     
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -57,71 +47,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
             scope.launch { vm.repo.setGlobalRingtone(uri?.toString()) }
         }
-    }
-
-    if (activeDialog == "audio") {
-        AlertDialog(
-            onDismissRequest = { activeDialog = null },
-            title = { Text("Sounds and Vibration") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Call Volume", style = MaterialTheme.typography.labelMedium)
-                    Slider(value = callVolume, onValueChange = { callVolume = it })
-                    
-                    Text("Ringtone Volume", style = MaterialTheme.typography.labelMedium)
-                    Slider(value = ringVolume, onValueChange = { ringVolume = it })
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Vibrate on Ring", modifier = Modifier.weight(1f))
-                        Switch(checked = vibrateEnabled, onCheckedChange = { vibrateEnabled = it })
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Keypad Tones", modifier = Modifier.weight(1f))
-                        Switch(checked = keypadTonesEnabled, onCheckedChange = { keypadTonesEnabled = it })
-                    }
-                    
-                    Divider()
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth().clickable { 
-                            val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Global Ringtone")
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, globalRingtone?.let { Uri.parse(it) })
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-                            }
-                            ringtonePickerLauncher.launch(intent)
-                        },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Ringtone", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                text = if (globalRingtone != null) {
-                                    try {
-                                        RingtoneManager.getRingtone(context, Uri.parse(globalRingtone)).getTitle(context)
-                                    } catch (_: Exception) { "Default" }
-                                } else "Default",
-                                style = MaterialTheme.typography.bodySmall, 
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        Icon(Icons.Default.ChevronRight, null)
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { activeDialog = null }) { Text("Done") } }
-        )
-    }
-
-    if (activeDialog != null && activeDialog != "audio") {
-        AlertDialog(
-            onDismissRequest = { activeDialog = null },
-            title = { Text(activeDialog?.replaceFirstChar { it.uppercase() } ?: "") },
-            text = { Text("Configure $activeDialog settings here. (Module working)") },
-            confirmButton = { TextButton(onClick = { activeDialog = null }) { Text("OK") } }
-        )
     }
 
     Scaffold(
@@ -147,41 +72,26 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             item { SettingsSection("Audio") }
 
             item {
+                val ringtoneName = if (globalRingtone != null) {
+                    try {
+                        RingtoneManager.getRingtone(context, Uri.parse(globalRingtone)).getTitle(context)
+                    } catch (_: Exception) { "Default" }
+                } else "Default"
+                
                 SettingsRow(
-                    icon = Icons.Default.VolumeUp,
-                    title = "Sounds and Vibration",
-                    subtitle = "Ringtone, vibration, in-call volume",
-                    onClick = { activeDialog = "audio" }
-                )
-            }
-
-            // ── Network ───────────────────────────────────────────────────
-            item { SettingsSection("Network") }
-
-            item {
-                SettingsRow(
-                    icon = Icons.Default.Wifi,
-                    title = "Network Protocols",
-                    subtitle = "UDP, TCP, TLS selection and Keep-alive",
-                    onClick = { activeDialog = "network" }
-                )
-            }
-
-            item {
-                SettingsRow(
-                    icon = Icons.Default.Router,
-                    title = "NAT Traversal",
-                    subtitle = "STUN / ICE settings for remote calls",
-                    onClick = { activeDialog = "nat" }
-                )
-            }
-
-            item {
-                SettingsRow(
-                    icon = Icons.Default.Security,
-                    title = "SRTP Encryption",
-                    subtitle = "Encrypted media for secure accounts",
-                    onClick = { activeDialog = "encryption" }
+                    icon = Icons.Default.NotificationsActive,
+                    title = "Global Ringtone",
+                    subtitle = ringtoneName,
+                    onClick = { 
+                        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_RINGTONE)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Select Global Ringtone")
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, globalRingtone?.let { Uri.parse(it) })
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
+                        }
+                        ringtonePickerLauncher.launch(intent)
+                    }
                 )
             }
 
@@ -189,63 +99,53 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             item { SettingsSection("General") }
 
             item {
+                val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
                 SettingsRow(
                     icon = Icons.Default.ContactPage,
                     title = "Calling Cards",
                     subtitle = "Enable full screen contact photo setup",
                     trailing = {
-                        Switch(checked = callsCardsEnabled, onCheckedChange = { callsCardsEnabled = it })
+                        Switch(checked = callsCardsEnabled, onCheckedChange = { vm.setCallingCards(it) })
                     },
-                    onClick = { callsCardsEnabled = !callsCardsEnabled }
+                    onClick = { vm.setCallingCards(!callsCardsEnabled) }
                 )
             }
 
             item {
-                SettingsRow(
-                    icon = Icons.Default.Language,
-                    title = "Language",
-                    subtitle = "System default (English)",
-                    onClick = { activeDialog = "language" }
-                )
-            }
-
-            item {
+                val darkModeEnabled by vm.darkModeEnabled.collectAsState()
                 SettingsRow(
                     icon = Icons.Default.DisplaySettings,
                     title = "Display Options",
-                    subtitle = "Dark mode, sort order, caller ID format",
+                    subtitle = "Dark mode",
                     trailing = {
-                        Switch(checked = darkModeEnabled, onCheckedChange = { darkModeEnabled = it })
+                        Switch(checked = darkModeEnabled, onCheckedChange = { vm.setDarkMode(it) })
                     },
-                    onClick = { darkModeEnabled = !darkModeEnabled }
+                    onClick = { vm.setDarkMode(!darkModeEnabled) }
+                )
+            }
+            
+            item {
+                val dndEnabled by vm.dndEnabled.collectAsState()
+                SettingsRow(
+                    icon = Icons.Default.DoNotDisturbOn,
+                    title = "Do Not Disturb",
+                    subtitle = "Automatically decline incoming calls",
+                    trailing = {
+                        Switch(checked = dndEnabled, onCheckedChange = { vm.setDnd(it) })
+                    },
+                    onClick = { vm.setDnd(!dndEnabled) }
                 )
             }
 
-            item {
-                SettingsRow(
-                    icon = Icons.Default.Accessibility,
-                    title = "Accessibility",
-                    subtitle = "Font size and screen reader support",
-                    onClick = { activeDialog = "accessibility" }
-                )
-            }
+            // ── System ───────────────────────────────────────────────────
+            item { SettingsSection("System") }
 
             item {
                 SettingsRow(
-                    icon = Icons.Default.Block,
-                    title = "Blocked Numbers",
-                    subtitle = "Manage call blocking list",
-                    onClick = { activeDialog = "blocked numbers" }
-                )
-            }
-
-            item { SettingsSection("About") }
-            item {
-                SettingsRow(
-                    icon = Icons.Default.Info,
-                    title = "IPDial",
-                    subtitle = "Version 1.0 • Opus codec",
-                    onClick = { activeDialog = "about" }
+                    icon = Icons.Default.List,
+                    title = "Activity Log",
+                    subtitle = "View full system activity logs",
+                    onClick = { onNavigateToLogs() }
                 )
             }
         }

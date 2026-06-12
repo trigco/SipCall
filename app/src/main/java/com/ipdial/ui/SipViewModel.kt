@@ -32,6 +32,19 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val globalRingtone: StateFlow<String?> = repo.globalRingtone
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val darkModeEnabled: StateFlow<Boolean> = repo.darkModeEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+        
+    val callingCardsEnabled: StateFlow<Boolean> = repo.callingCardsEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+        
+    val dndEnabled: StateFlow<Boolean> = repo.dndEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setDarkMode(enabled: Boolean) = viewModelScope.launch { repo.setDarkMode(enabled) }
+    fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
+    fun setDnd(enabled: Boolean) = viewModelScope.launch { repo.setDnd(enabled) }
+
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -93,7 +106,10 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 _isConnected.value = true
                 viewModelScope.launch {
                     accounts.value.forEach { 
-                        if (it.isEnabled) SipEngine.addAccount(it)
+                        if (it.isEnabled) {
+                            SipEngine.addAccount(it)
+                            SipEngine.reconnectAccount(it.id)
+                        }
                     }
                 }
             }
@@ -192,6 +208,11 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        if (account.regStatus != RegStatus.REGISTERED) {
+            Toast.makeText(getApplication(), "Account is not registered", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         if (!_isConnected.value) {
             Toast.makeText(getApplication(), "No internet connection", Toast.LENGTH_SHORT).show()
             return
@@ -256,7 +277,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cleanUri(uri: String): String {
-        return uri.removePrefix("sip:")
+        return uri.replace("<", "").replace(">", "").removePrefix("sip:")
             .substringBefore("@")
             .substringBefore(";")
     }
@@ -325,7 +346,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             _selectedAccountId.value ?: accounts.value.firstOrNull()?.id ?: return
         }
         _selectedAccountId.value = accId
-        makeCall(entry.remoteUri)
+        makeCall(cleanUri(entry.remoteUri))
     }
 
     fun logCall(entry: CallLogEntry) = viewModelScope.launch {

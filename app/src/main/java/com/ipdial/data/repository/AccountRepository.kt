@@ -3,6 +3,7 @@ package com.ipdial.data.repository
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -19,6 +20,9 @@ class AccountRepository(private val context: Context) {
     private val gson = Gson()
     private val ACCOUNTS_KEY = stringPreferencesKey("accounts")
     private val RINGTONE_KEY = stringPreferencesKey("global_ringtone")
+    private val DARK_MODE_KEY = booleanPreferencesKey("dark_mode")
+    private val CALLING_CARDS_KEY = booleanPreferencesKey("calling_cards")
+    private val DND_KEY = booleanPreferencesKey("dnd_enabled")
 
     val accounts: Flow<List<SipAccount>> = context.dataStore.data.map { prefs ->
         val json = prefs[ACCOUNTS_KEY] ?: return@map emptyList()
@@ -29,6 +33,14 @@ class AccountRepository(private val context: Context) {
     val globalRingtone: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[RINGTONE_KEY]
     }
+
+    val darkModeEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[DARK_MODE_KEY] ?: false }
+    val callingCardsEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[CALLING_CARDS_KEY] ?: true }
+    val dndEnabled: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[DND_KEY] ?: false }
+
+    suspend fun setDarkMode(enabled: Boolean) = context.dataStore.edit { it[DARK_MODE_KEY] = enabled }
+    suspend fun setCallingCards(enabled: Boolean) = context.dataStore.edit { it[CALLING_CARDS_KEY] = enabled }
+    suspend fun setDnd(enabled: Boolean) = context.dataStore.edit { it[DND_KEY] = enabled }
 
     suspend fun setGlobalRingtone(uri: String?) {
         context.dataStore.edit { prefs ->

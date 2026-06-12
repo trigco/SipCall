@@ -31,11 +31,36 @@ import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.screens.*
 import com.ipdial.ui.theme.IPDialTheme
 
+import androidx.activity.viewModels
+
+object AppState {
+    var isForeground = false
+}
+
 class MainActivity : ComponentActivity() {
 
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { /* handle results if needed */ }
+
+    private val vm: SipViewModel by viewModels()
+
+    override fun onResume() {
+        super.onResume()
+        AppState.isForeground = true
+        val nm = getSystemService(android.app.NotificationManager::class.java)
+        nm.cancel(com.ipdial.service.SipService.NOTIF_ID_INCOMING)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        AppState.isForeground = false
+        val session = vm.callSession.value
+        if (session != null && session.direction == CallDirection.INCOMING && 
+            (session.state == CallState.INCOMING || session.state == CallState.EARLY)) {
+            com.ipdial.service.SipService.showIncomingCallNotificationStatic(this, session.remoteDisplayName, session.callId)
+        }
+    }
 
     private val testCallNumber = mutableStateOf<String?>(null)
     private val triggerHangup = mutableStateOf(false)
@@ -48,7 +73,10 @@ class MainActivity : ComponentActivity() {
         handleIntent(intent)
 
         setContent {
-            IPDialTheme {
+            val vm: SipViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+            val darkMode by vm.darkModeEnabled.collectAsState()
+            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            IPDialTheme(darkTheme = darkMode || systemDark) {
                 IPDialApp(testCallNumber, triggerHangup)
             }
         }
@@ -305,7 +333,8 @@ fun IPDialApp(
                             composable(NavDest.Settings.route) { 
                                 SettingsScreen(
                                     vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    onOpenDrawer = { scope.launch { drawerState.open() } },
+                                    onNavigateToLogs = { navController.navigate(NavDest.Logs.route) }
                                 ) 
                             }
                             composable(NavDest.Accounts.route) { 

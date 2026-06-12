@@ -22,11 +22,15 @@ object TelecomHelper {
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
         val handle = getPhoneAccountHandle(context)
         
+        val extras = Bundle().apply {
+            putBoolean(PhoneAccount.EXTRA_LOG_SELF_MANAGED_CALLS, false)
+        }
         val phoneAccount = PhoneAccount.builder(handle, context.getString(R.string.app_name))
             .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
             .setShortDescription("SIP Calls via IPDial")
             .addSupportedUriScheme(PhoneAccount.SCHEME_SIP)
             .addSupportedUriScheme(PhoneAccount.SCHEME_TEL)
+            .setExtras(extras)
             .build()
             
         telecomManager.registerPhoneAccount(phoneAccount)

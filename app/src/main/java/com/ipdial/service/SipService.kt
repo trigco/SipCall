@@ -41,6 +41,59 @@ class SipService : Service() {
                 context.startService(intent)
             }
         }
+
+        fun showIncomingCallNotificationStatic(context: Context, callerName: String, callId: Int) {
+            if (com.ipdial.AppState.isForeground) return
+
+            val fullscreenIntent = Intent(context, MainActivity::class.java).apply {
+                action = "com.ipdial.ACTION_INCOMING_CALL"
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            val fullscreenPi = PendingIntent.getActivity(context, 0, fullscreenIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+
+            val answerPi = PendingIntent.getService(context, 1,
+                Intent(context, SipService::class.java).apply {
+                    action = ACTION_ANSWER
+                    putExtra("callId", callId)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val declinePi = PendingIntent.getService(context, 2,
+                Intent(context, SipService::class.java).apply {
+                    action = ACTION_DECLINE
+                    putExtra("callId", callId)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val callerPerson = androidx.core.app.Person.Builder()
+                .setName(callerName)
+                .setImportant(true)
+                .build()
+
+            val answerText = android.text.SpannableString("Answer")
+            answerText.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#4CAF50")), 0, answerText.length, 0)
+            val declineText = android.text.SpannableString("Decline")
+            declineText.setSpan(android.text.style.ForegroundColorSpan(android.graphics.Color.parseColor("#F44336")), 0, declineText.length, 0)
+
+            val notif = NotificationCompat.Builder(context, NOTIF_CHANNEL_CALL)
+                .setContentTitle("Incoming Call")
+                .setContentText(callerName)
+                .setSmallIcon(R.drawable.ic_notif_call)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setFullScreenIntent(fullscreenPi, true)
+                .setStyle(NotificationCompat.CallStyle.forIncomingCall(callerPerson, declinePi, answerPi))
+                .addAction(R.drawable.ic_call_answer, answerText, answerPi)
+                .addAction(R.drawable.ic_call_end, declineText, declinePi)
+                .setAutoCancel(false)
+                .setOngoing(true)
+                .build()
+
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+            nm.notify(NOTIF_ID_INCOMING, notif)
+        }
     }
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -56,10 +109,14 @@ class SipService : Service() {
         TelecomHelper.registerPhoneAccount(applicationContext)
         SipEngine.init(applicationContext)
         SipEngine.onIncomingCall = { session -> 
-            // Report to Telecom for basic integration (busy signal, system call management)
-            TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, session.remoteDisplayName)
-
-            showIncomingCallNotification(session.remoteDisplayName, session.callId)
+            val isDnd = kotlinx.coroutines.runBlocking { repo.dndEnabled.first() }
+            if (isDnd) {
+                SipEngine.hangupCall(session.callId)
+            } else {
+                // Report to Telecom for basic integration (busy signal, system call management)
+                TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, session.remoteDisplayName)
+                showIncomingCallNotification(session.remoteDisplayName, session.callId)
+            }
         }
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -241,9 +298,10 @@ class SipService : Service() {
     }
 
     private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         wakeLock = pm.newWakeLock(
-            PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
             "IPDial:call"
         ).apply { acquire(60 * 60 * 1000L) }
     }
@@ -291,43 +349,7 @@ class SipService : Service() {
     }
 
     private fun showIncomingCallNotification(callerName: String, callId: Int) {
-        val fullscreenIntent = Intent(this, MainActivity::class.java).apply {
-            action = "com.ipdial.ACTION_INCOMING_CALL"
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val fullscreenPi = PendingIntent.getActivity(this, 0, fullscreenIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
-        val answerPi = PendingIntent.getService(this, 1,
-            Intent(this, SipService::class.java).apply {
-                action = ACTION_ANSWER
-                putExtra("callId", callId)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val declinePi = PendingIntent.getService(this, 2,
-            Intent(this, SipService::class.java).apply {
-                action = ACTION_DECLINE
-                putExtra("callId", callId)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notif = NotificationCompat.Builder(this, NOTIF_CHANNEL_CALL)
-            .setContentTitle("Incoming Call")
-            .setContentText(callerName)
-            .setSmallIcon(R.drawable.ic_notif_call)
-            .setPriority(NotificationCompat.PRIORITY_MAX)
-            .setCategory(NotificationCompat.CATEGORY_CALL)
-            .setFullScreenIntent(fullscreenPi, true)
-            .addAction(R.drawable.ic_call_answer, "Answer", answerPi)
-            .addAction(R.drawable.ic_call_end, "Decline", declinePi)
-            .setAutoCancel(false)
-            .setOngoing(true)
-            .build()
-
-        val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NOTIF_ID_INCOMING, notif)
+        showIncomingCallNotificationStatic(this, callerName, callId)
     }
 
     private fun cancelIncomingNotification() {
