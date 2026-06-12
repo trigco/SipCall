@@ -25,12 +25,59 @@ import androidx.compose.ui.unit.dp
 import com.ipdial.R
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
+import com.ipdial.util.UpdateChecker
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val context = LocalContext.current
     val accounts by vm.accounts.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    // Current version from PackageManager
+    val currentVersion = remember {
+        try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0" }
+        catch (e: Exception) { "1.0" }
+    }
+
+    // Update check state
+    var checkingUpdate by remember { mutableStateOf(false) }
+    var updateRelease by remember { mutableStateOf<UpdateChecker.GitHubRelease?>(null) }
+    var upToDateMsg by remember { mutableStateOf(false) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
+    // Update dialog
+    if (showUpdateDialog && updateRelease != null) {
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            icon = { Icon(Icons.Default.SystemUpdate, null) },
+            title = { Text("Update Available") },
+            text = {
+                Column {
+                    Text("Version ${updateRelease!!.tag_name.trimStart('v')} is available.")
+                    if (updateRelease!!.body.isNotBlank()) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            updateRelease!!.body.take(300),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showUpdateDialog = false
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease!!.html_url))
+                    context.startActivity(intent)
+                }) { Text("Download") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateDialog = false }) { Text("Later") }
+            }
+        )
+    }
 
     val appIconBitmap = remember(context) {
         try {
@@ -84,11 +131,43 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Version 1.0.0",
+                text = "Version $currentVersion",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline
             )
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(8.dp))
+            // Check for updates button
+            OutlinedButton(
+                onClick = {
+                    checkingUpdate = true
+                    upToDateMsg = false
+                    scope.launch {
+                        val release = UpdateChecker.checkForUpdates(currentVersion)
+                        checkingUpdate = false
+                        if (release != null) {
+                            updateRelease = release
+                            showUpdateDialog = true
+                        } else {
+                            upToDateMsg = true
+                        }
+                    }
+                },
+                enabled = !checkingUpdate
+            ) {
+                if (checkingUpdate) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(if (checkingUpdate) "Checking…" else "Check for Updates")
+            }
+            if (upToDateMsg) {
+                Text(
+                    "You're on the latest version!",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(Modifier.height(24.dp))
             Text(
                 text = "A simple VoIP client for Android.",
                 style = MaterialTheme.typography.bodyLarge,

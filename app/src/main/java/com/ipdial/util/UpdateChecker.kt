@@ -10,7 +10,7 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 
 object UpdateChecker {
-    private const val GITHUB_API_URL = "https://api.github.com/repos/nazimunaeem1/IPCall/releases/latest"
+    private const val GITHUB_API_URL = "https://api.github.com/repos/nazimunaeem/IPDial/releases/latest"
     private const val TAG = "UpdateChecker"
 
     data class GitHubRelease(val tag_name: String, val html_url: String, val body: String)
