@@ -413,18 +413,20 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         _showAd.value = false
     }
 
-    fun triggerAd(context: Context, durationMs: Long = 10000L) {
+    fun triggerAd(context: Context, durationMs: Long = 10000L, autoDismiss: Boolean = true) {
         adJob?.cancel()
         _showAd.value = true // Show immediately
-        adJob = viewModelScope.launch {
-            delay(durationMs)
-            _showAd.value = false
+        if (autoDismiss) {
+            adJob = viewModelScope.launch {
+                delay(durationMs)
+                _showAd.value = false
+            }
         }
     }
 
     fun onCodecAction(context: Context) {
         codecActionCount++
-        triggerAd(context) // Trigger immediately for testing or based on updated request
+        triggerAd(context, autoDismiss = false) // Persistent ad for codec actions
     }
 
     fun fetchBalance(account: SipAccount, context: Context) {

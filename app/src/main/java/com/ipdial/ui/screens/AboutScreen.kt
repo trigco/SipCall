@@ -112,26 +112,20 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(24.dp))
             
-            Text(
-                text = "facebook.com/nazimunaeem1",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.clickableWithRipple {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://facebook.com/nazimunaeem1"))
-                    context.startActivity(intent)
-                }
-            )
-            Text(
-                text = "Telegram: t.me/IPDial",
-                color = MaterialTheme.colorScheme.primary,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.clickableWithRipple {
+            Button(
+                onClick = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/IPDial"))
                     context.startActivity(intent)
-                }
-            )
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Default.Group, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Join Telegram Community")
+            }
         }
     }
 }

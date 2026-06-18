@@ -24,3 +24,10 @@
 -keep class androidx.compose.material.ripple.** { *; }
 -keep class androidx.compose.material3.ripple.** { *; }
 -keep interface androidx.compose.foundation.IndicationNodeFactory { *; }
+
+# More aggressive shrinking
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+    public static *** i(...);
+}
