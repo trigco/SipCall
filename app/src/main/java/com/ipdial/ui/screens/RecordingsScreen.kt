@@ -50,7 +50,7 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
     Scaffold(
         topBar = {
-            IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
+            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -69,6 +69,7 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                     mediaPlayer.stop()
                                     mediaPlayer.reset()
                                     playingFile = null
+                                    vm.dismissAd()
                                 } else {
                                     try {
                                         mediaPlayer.reset()
@@ -76,9 +77,14 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                             mediaPlayer.setDataSource(fis.fd)
                                         }
                                         mediaPlayer.prepare()
+                                        val duration = mediaPlayer.duration.toLong()
                                         mediaPlayer.start()
                                         playingFile = file
-                                        mediaPlayer.setOnCompletionListener { playingFile = null }
+                                        vm.triggerAd(context, duration)
+                                        mediaPlayer.setOnCompletionListener { 
+                                            playingFile = null
+                                            vm.dismissAd()
+                                        }
                                     } catch (e: Exception) {
                                         playingFile = null
                                         android.widget.Toast.makeText(context, "Playback failed", android.widget.Toast.LENGTH_SHORT).show()
@@ -94,6 +100,25 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                     mediaPlayer.stop()
                                     mediaPlayer.reset()
                                     playingFile = null
+                                    vm.dismissAd()
+                                }
+                            },
+                            onShare = {
+                                vm.triggerAd(context)
+                                try {
+                                    val uri = androidx.core.content.FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.provider",
+                                        file
+                                    )
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "audio/*"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Share/Export Recording"))
+                                } catch (e: Exception) {
+                                    android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
                         )
@@ -105,7 +130,7 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 }
 
 @Composable
-fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: () -> Unit) {
+fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: () -> Unit, onShare: () -> Unit) {
     val context = LocalContext.current
     val dateStr = SimpleDateFormat("MMM d, yyyy h:mm a", Locale.getDefault()).format(Date(file.lastModified()))
     val sizeStr = "%.2f MB".format(file.length().toDouble() / (1024 * 1024))
@@ -129,23 +154,7 @@ fun RecordingItem(file: File, isPlaying: Boolean, onPlay: () -> Unit, onDelete: 
                 Text("$dateStr • $sizeStr", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             
-            IconButton(onClick = {
-                try {
-                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.provider",
-                        file
-                    )
-                    val intent = Intent(Intent.ACTION_SEND).apply {
-                        type = "audio/*"
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    }
-                    context.startActivity(Intent.createChooser(intent, "Share/Export Recording"))
-                } catch (e: Exception) {
-                    android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            }) {
+            IconButton(onClick = onShare) {
                 Icon(Icons.Default.Share, "Share", tint = MaterialTheme.colorScheme.primary)
             }
 

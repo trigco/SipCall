@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -37,10 +39,11 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val accounts by vm.accounts.collectAsState()
     var editingAccount by remember { mutableStateOf<SipAccount?>(null) }
     var showEditSheet by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
-            IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
+            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
         },
         floatingActionButton = {
             FloatingActionButton(onClick = {
@@ -67,7 +70,8 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     onEdit = { editingAccount = account; showEditSheet = true },
                     onDelete = { vm.deleteAccount(account.id) },
                     onSetDefault = { vm.setDefaultAccount(account.id) },
-                    onToggleEnabled = { vm.saveAccount(account.copy(isEnabled = !account.isEnabled)) }
+                    onToggleEnabled = { vm.saveAccount(account.copy(isEnabled = !account.isEnabled)) },
+                    vm = vm
                 )
             }
         }
@@ -88,10 +92,12 @@ fun AccountSettingsRow(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onSetDefault: () -> Unit,
-    onToggleEnabled: () -> Unit
+    onToggleEnabled: () -> Unit,
+    vm: SipViewModel
 ) {
     var showMenu by remember { mutableStateOf(false) }
-
+    val context = LocalContext.current
+    
     Surface(
         color = MaterialTheme.colorScheme.surface,
         modifier = Modifier.fillMaxWidth()
@@ -256,6 +262,30 @@ fun AccountEditSheet(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
+
+            // Codec Selection with Ad-Gate
+            Text("Preferred Codec", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            var showCodecMenu by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = { showCodecMenu = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(codec.name)
+                    Icon(Icons.Default.ArrowDropDown, null)
+                }
+                DropdownMenu(expanded = showCodecMenu, onDismissRequest = { showCodecMenu = false }) {
+                    PreferredCodec.values().forEach { c ->
+                        DropdownMenuItem(
+                            text = { Text(c.name) },
+                            onClick = {
+                                codec = c
+                                showCodecMenu = false
+                            }
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(8.dp))
 

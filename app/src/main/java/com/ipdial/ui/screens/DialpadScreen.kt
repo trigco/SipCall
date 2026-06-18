@@ -1,3 +1,4 @@
+@file:Suppress("OPT_IN_USAGE", "EXPERIMENTAL_API_USAGE", "EXPERIMENTAL_IS_NOT_ENABLED")
 package com.ipdial.ui.screens
 
 import androidx.compose.animation.*
@@ -52,6 +53,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     val haptic = LocalHapticFeedback.current
     var showMenu by remember { mutableStateOf(false) }
     val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
+    var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
 
     val suggestedContacts = remember(dialString, contacts) {
         if (dialString.isBlank()) emptyList()
@@ -81,7 +83,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             .background(MaterialTheme.colorScheme.background),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
+        IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
 
         // Suggested contacts space
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -97,10 +99,14 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     }
                     items(mostCalled) { contact ->
                         SuggestedContactRow(contact) {
-                            vm.clearDial()
-                            contact.numbers.firstOrNull()?.let { num ->
-                                num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                                vm.makeCall()
+                            if (contact.numbers.size > 1) {
+                                activeContactForNumberPicker = contact
+                            } else {
+                                vm.clearDial()
+                                contact.numbers.firstOrNull()?.let { num ->
+                                    num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                    vm.makeCall()
+                                }
                             }
                         }
                     }
@@ -109,10 +115,14 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                     items(suggestedContacts) { contact ->
                         SuggestedContactRow(contact) {
-                            vm.clearDial()
-                            contact.numbers.firstOrNull()?.let { num ->
-                                num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                                vm.makeCall()
+                            if (contact.numbers.size > 1) {
+                                activeContactForNumberPicker = contact
+                            } else {
+                                vm.clearDial()
+                                contact.numbers.firstOrNull()?.let { num ->
+                                    num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                    vm.makeCall()
+                                }
                             }
                         }
                     }
@@ -300,6 +310,18 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         }
 
         Spacer(Modifier.height(12.dp))
+    }
+
+    activeContactForNumberPicker?.let { contact ->
+        com.ipdial.ui.NumberPickerDialog(
+            numbers = contact.numbers,
+            onPick = { number ->
+                vm.clearDial()
+                number.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                vm.makeCall()
+            },
+            onDismiss = { activeContactForNumberPicker = null }
+        )
     }
 }
 

@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,13 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
 import com.ipdial.ui.IPDialTopBar
@@ -40,6 +33,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     val scope = rememberCoroutineScope()
     val accounts by vm.accounts.collectAsState()
     val globalRingtone by vm.globalRingtone.collectAsState()
+    val activeAccount by vm.activeAccount.collectAsState()
     
     val ringtonePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -50,18 +44,16 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         }
     }
 
-    // Current version from PackageManager
     val currentVersion = remember {
         try { context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0" }
         catch (e: Exception) { "1.0" }
     }
 
-    // Update check state
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateRelease by remember { mutableStateOf<UpdateChecker.GitHubRelease?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+    var showCodecDialog by remember { mutableStateOf(false) }
 
-    // Update dialog
     if (showUpdateDialog && updateRelease != null) {
         AlertDialog(
             onDismissRequest = { showUpdateDialog = false },
@@ -72,11 +64,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     Text("Version ${updateRelease!!.tagName.trimStart('v')} is available.")
                     if (updateRelease!!.body.isNotBlank()) {
                         Spacer(Modifier.height(8.dp))
-                        Text(
-                            updateRelease!!.body.take(300),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text(updateRelease!!.body.take(300), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             },
@@ -93,9 +81,36 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         )
     }
 
+    if (showCodecDialog && activeAccount != null) {
+        AlertDialog(
+            onDismissRequest = { showCodecDialog = false },
+            title = { Text("Select Preferred Codec") },
+            text = {
+                Column {
+                    PreferredCodec.values().forEach { codec ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                val updated = activeAccount!!.copy(codec = codec)
+                                vm.saveAccount(updated)
+                                showCodecDialog = false
+                                vm.dismissAd()
+                            }.padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = activeAccount?.codec == codec, onClick = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(codec.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
     Scaffold(
         topBar = {
-            IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
+            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
         }
     ) { padding ->
         LazyColumn(
@@ -105,26 +120,19 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 .background(MaterialTheme.colorScheme.background),
             contentPadding = PaddingValues(bottom = 80.dp)
         ) {
-            // ── Donation ──────────────────────────────────────────────────
             item {
                 Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     DonationCardSmall(bkashNumber = "01728867695")
                 }
             }
 
-            // ── Updates ───────────────────────────────────────────────────
             item { SettingsSection("Updates") }
-
             item {
                 SettingsRow(
                     icon = Icons.Default.SystemUpdate,
                     title = "Check for Updates",
                     subtitle = if (checkingUpdate) "Checking…" else "Current version: $currentVersion",
-                    trailing = {
-                        if (checkingUpdate) {
-                            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                        }
-                    },
+                    trailing = { if (checkingUpdate) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) },
                     onClick = {
                         if (!checkingUpdate) {
                             checkingUpdate = true
@@ -143,14 +151,11 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 )
             }
 
-            // ── Audio ──────────────────────────────────────────────────────
             item { SettingsSection("Audio") }
-
             item {
                 val ringtoneName = if (globalRingtone != null) {
-                    try {
-                        RingtoneManager.getRingtone(context, Uri.parse(globalRingtone)).getTitle(context)
-                    } catch (_: Exception) { "Default" }
+                    try { RingtoneManager.getRingtone(context, Uri.parse(globalRingtone)).getTitle(context) }
+                    catch (_: Exception) { "Default" }
                 } else "Default"
                 
                 SettingsRow(
@@ -176,25 +181,36 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.Vibration,
                     title = "Vibrate on Ring",
                     subtitle = "Vibrate when receiving incoming calls",
-                    trailing = {
-                        Switch(checked = globalVibrate, onCheckedChange = { vm.setGlobalVibrate(it) })
-                    },
+                    trailing = { Switch(checked = globalVibrate, onCheckedChange = { vm.setGlobalVibrate(it) }) },
                     onClick = { vm.setGlobalVibrate(!globalVibrate) }
                 )
             }
 
-            // ── General ───────────────────────────────────────────────────
-            item { SettingsSection("General") }
+            item { SettingsSection("Audio Codecs") }
+            item {
+                SettingsRow(
+                    icon = Icons.Default.Audiotrack,
+                    title = "Preferred Codec",
+                    subtitle = activeAccount?.codec?.name ?: "Select Codec",
+                    onClick = {
+                        vm.onCodecAction(context)
+                        if (activeAccount != null) {
+                            showCodecDialog = true
+                        } else {
+                            android.widget.Toast.makeText(context, "No active account", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
+            }
 
+            item { SettingsSection("General") }
             item {
                 val callsCardsEnabled by vm.callingCardsEnabled.collectAsState()
                 SettingsRow(
                     icon = Icons.Default.ContactPage,
                     title = "Calling Cards",
                     subtitle = "Enable full screen contact photo setup",
-                    trailing = {
-                        Switch(checked = callsCardsEnabled, onCheckedChange = { vm.setCallingCards(it) })
-                    },
+                    trailing = { Switch(checked = callsCardsEnabled, onCheckedChange = { vm.setCallingCards(it) }) },
                     onClick = { vm.setCallingCards(!callsCardsEnabled) }
                 )
             }
@@ -205,9 +221,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.DisplaySettings,
                     title = "Dark Mode",
                     subtitle = "Dark mode",
-                    trailing = {
-                        Switch(checked = darkModeEnabled, onCheckedChange = { vm.setDarkMode(it) })
-                    },
+                    trailing = { Switch(checked = darkModeEnabled, onCheckedChange = { vm.setDarkMode(it) }) },
                     onClick = { vm.setDarkMode(!darkModeEnabled) }
                 )
             }
@@ -218,16 +232,12 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.DoNotDisturbOn,
                     title = "Do Not Disturb",
                     subtitle = "Automatically decline incoming calls",
-                    trailing = {
-                        Switch(checked = dndEnabled, onCheckedChange = { vm.setDnd(it) })
-                    },
+                    trailing = { Switch(checked = dndEnabled, onCheckedChange = { vm.setDnd(it) }) },
                     onClick = { vm.setDnd(!dndEnabled) }
                 )
             }
 
-            // ── System ───────────────────────────────────────────────────
             item { SettingsSection("System") }
-
             item {
                 SettingsRow(
                     icon = Icons.Default.List,

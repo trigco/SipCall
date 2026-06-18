@@ -106,7 +106,7 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        IPDialTopBar(accounts = accounts, onOpenDrawer = onOpenDrawer)
+        IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
 
         SearchBarRow(
             query = searchQuery,
@@ -181,6 +181,18 @@ fun HomeScreen(
             }
         } else {
             val historyListState = rememberLazyListState()
+            
+            val showSearchContactsInHistory = remember(filterIndex, searchQuery, filteredLog) {
+                filterIndex == 0 && searchQuery.isNotBlank() && filteredLog.isEmpty()
+            }
+            
+            val searchContacts = remember(contactsState, searchQuery, showSearchContactsInHistory) {
+                if (!showSearchContactsInHistory) emptyList()
+                else contactsState.filter {
+                    it.name.contains(searchQuery, ignoreCase = true) ||
+                            it.numbers.any { num -> num.contains(searchQuery) }
+                }.sortedBy { it.name.trim().lowercase() }
+            }
 
             LazyColumn(
                 state = historyListState,
@@ -189,6 +201,44 @@ fun HomeScreen(
             ) {
                 if (grouped.isEmpty() && searchQuery.isBlank()) {
                     item { EmptyLogPrompt() }
+                } else if (showSearchContactsInHistory) {
+                    if (searchContacts.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                                Text("No matches found", color = MaterialTheme.colorScheme.outline)
+                            }
+                        }
+                    } else {
+                        item {
+                            Text(
+                                text = "Contacts",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(searchContacts, key = { "search_${it.id}" }) { contact ->
+                            ContactItem(
+                                contact = contact,
+                                onCall = {
+                                    if (contact.numbers.size > 1) {
+                                        activeContactForNumberPicker = contact
+                                    } else {
+                                        contact.numbers.firstOrNull()?.let { vm.makeCall(it) }
+                                    }
+                                },
+                                onDetails = {
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                        data = android.net.Uri.withAppendedPath(
+                                            android.provider.ContactsContract.Contacts.CONTENT_URI, 
+                                            contact.id
+                                        )
+                                    }
+                                    context.startActivity(intent)
+                                }
+                            )
+                        }
+                    }
                 } else {
                     grouped.forEach { (label, entries) ->
                         item {

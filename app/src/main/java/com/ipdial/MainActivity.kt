@@ -41,6 +41,15 @@ import androidx.activity.viewModels
 
 import androidx.activity.enableEdgeToEdge
 
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.background
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+
 object AppState {
     var isForeground = false
 }
@@ -355,94 +364,100 @@ fun IPDialApp(
                                     .fillMaxSize()
                                     .padding(innerPadding)
                             ) {
-                            composable(NavDest.Home.route) { 
-                                HomeScreen(
-                                    vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } },
-                                    onEditBeforeCall = { number ->
-                                        vm.prefillDialer(number)
-                                        navController.navigate(NavDest.Keypad.route) {
-                                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                            launchSingleTop = true
-                                            restoreState = true
+                                composable(NavDest.Home.route) { 
+                                    HomeScreen(
+                                        vm = vm, 
+                                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                                        onEditBeforeCall = { number ->
+                                            vm.prefillDialer(number)
+                                            navController.navigate(NavDest.Keypad.route) {
+                                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                                launchSingleTop = true
+                                                restoreState = true
+                                            }
                                         }
-                                    }
-                                ) 
+                                    ) 
+                                }
+                                composable(NavDest.Keypad.route) { 
+                                    DialpadScreen(
+                                        vm = vm, 
+                                        onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    ) 
+                                }
+                                composable(NavDest.Contacts.route) { 
+                                    ContactsScreen(
+                                        vm = vm, 
+                                        onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    ) 
+                                }
+                                composable(NavDest.Settings.route) { 
+                                    SettingsScreen(
+                                        vm = vm, 
+                                        onOpenDrawer = { scope.launch { drawerState.open() } },
+                                        onNavigateToLogs = { navController.navigate(NavDest.Logs.route) }
+                                    ) 
+                                }
+                                composable(NavDest.Accounts.route) { 
+                                    AccountsScreen(
+                                        vm = vm, 
+                                        onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    ) 
+                                }
+                                composable(NavDest.Recordings.route) {
+                                    RecordingsScreen(
+                                        vm = vm,
+                                        onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    )
+                                }
+                                composable(NavDest.Logs.route) {
+                                    ActivityLogScreen(
+                                        vm = vm,
+                                        onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    )
+                                }
+                                composable(NavDest.About.route) { 
+                                    AboutScreen(
+                                        vm = vm,
+                                        onOpenDrawer = { scope.launch { drawerState.open() } }
+                                    )
+                                }
                             }
-                            composable(NavDest.Keypad.route) { 
-                                DialpadScreen(
-                                    vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
-                                ) 
-                            }
-                            composable(NavDest.Contacts.route) { 
-                                ContactsScreen(
-                                    vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
-                                ) 
-                            }
-                            composable(NavDest.Settings.route) { 
-                                SettingsScreen(
-                                    vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } },
-                                    onNavigateToLogs = { navController.navigate(NavDest.Logs.route) }
-                                ) 
-                            }
-                            composable(NavDest.Accounts.route) { 
-                                AccountsScreen(
-                                    vm = vm, 
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
-                                ) 
-                            }
-                            composable(NavDest.Recordings.route) {
-                                RecordingsScreen(
-                                    vm = vm,
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
-                                )
-                            }
-                            composable(NavDest.Logs.route) {
-                                ActivityLogScreen(
-                                    vm = vm,
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
-                                )
-                            }
-                            composable(NavDest.About.route) { 
-                                AboutScreen(
-                                    vm = vm,
-                                    onOpenDrawer = { scope.launch { drawerState.open() } }
-                                )
-                            }
-                        }
 
-                        // If there is an incoming call, but we are not showing full screen, show the banner!
-                        if (activeCallSession != null && 
-                            activeCallSession.direction == CallDirection.INCOMING &&
-                            (activeCallSession.state == CallState.INCOMING || activeCallSession.state == CallState.EARLY)) {
-                            
-                            val contacts by vm.contacts.collectAsState()
-                            val contact = remember(activeCallSession.remoteUri, contacts) {
-                                val cleanedSessionUriDigits = vm.cleanUri(activeCallSession.remoteUri).filter { it.isDigit() }
-                                if (cleanedSessionUriDigits.length < 10) {
-                                    null
-                                } else {
-                                    contacts.find { c ->
-                                        c.numbers.any { n ->
-                                            val cleanedContactNumberDigits = n.filter { it.isDigit() }
-                                            cleanedContactNumberDigits.length >= 10 &&
-                                            (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
+                            // If there is an incoming call, but we are not showing full screen, show the banner!
+                            if (activeCallSession != null && 
+                                activeCallSession.direction == CallDirection.INCOMING &&
+                                (activeCallSession.state == CallState.INCOMING || activeCallSession.state == CallState.EARLY)) {
+                                
+                                val contacts by vm.contacts.collectAsState()
+                                val contact = remember(activeCallSession.remoteUri, contacts) {
+                                    val cleanedSessionUriDigits = vm.cleanUri(activeCallSession.remoteUri).filter { it.isDigit() }
+                                    if (cleanedSessionUriDigits.length < 10) {
+                                        null
+                                    } else {
+                                        contacts.find { c ->
+                                            c.numbers.any { n ->
+                                                val cleanedContactNumberDigits = n.filter { it.isDigit() }
+                                                cleanedContactNumberDigits.length >= 10 &&
+                                                (cleanedSessionUriDigits.contains(cleanedContactNumberDigits) || cleanedContactNumberDigits.contains(cleanedSessionUriDigits))
+                                            }
                                         }
                                     }
                                 }
-                            }
-                            val displayName = contact?.name ?: activeCallSession.remoteDisplayName.ifBlank { vm.cleanUri(activeCallSession.remoteUri) }
+                                val displayName = contact?.name ?: activeCallSession.remoteDisplayName.ifBlank { vm.cleanUri(activeCallSession.remoteUri) }
 
-                            IncomingCallBanner(
-                                session = activeCallSession,
-                                displayName = displayName,
-                                onAnswer = { vm.answerCall() },
-                                onDecline = { vm.hangup() },
-                                onClick = { showFullIncomingScreen = true }
-                            )
+                                IncomingCallBanner(
+                                    session = activeCallSession,
+                                    displayName = displayName,
+                                    onAnswer = { vm.answerCall() },
+                                    onDecline = { vm.hangup() },
+                                    onClick = { showFullIncomingScreen = true }
+                                )
+                            }
+                            
+                            val showAd by vm.showAd.collectAsState()
+                            if (showAd) {
+                                AdDialog(onDismiss = { vm.dismissAd() })
+                            }
                         }
                     }
                 }
@@ -450,6 +465,84 @@ fun IPDialApp(
         }
     }
 }
+
+@Composable
+fun AdDialog(onDismiss: () -> Unit) {
+    Popup(
+        alignment = Alignment.BottomCenter,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 0.dp, vertical = 24.dp)
+                .width(320.dp)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(4.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 4.dp,
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(0.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(20.dp).padding(2.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close, 
+                            contentDescription = "Close Ad",
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .width(320.dp)
+                        .height(90.dp)
+                ) {
+                    AndroidView(
+                        factory = { context ->
+                            WebView(context).apply {
+                                settings.javaScriptEnabled = true
+                                webViewClient = WebViewClient()
+                                val html = """
+                                    <html>
+                                    <body style="margin:0;padding:0;display:flex;justify-content:center;align-items:center;background-color:transparent;">
+                                        <script>
+                                          atOptions = {
+                                            'key' : '408102d569914168e5792b69e28d7e6d',
+                                            'format' : 'iframe',
+                                            'height' : 90,
+                                            'width' : 728,
+                                            'params' : {}
+                                          };
+                                        </script>
+                                        <script src="https://www.highperformanceformat.com/408102d569914168e5792b69e28d7e6d/invoke.js"></script>
+                                    </body>
+                                    </html>
+                                """.trimIndent()
+                                loadDataWithBaseURL("https://www.highperformanceformat.com", html, "text/html", "UTF-8", null)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable

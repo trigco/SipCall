@@ -86,7 +86,7 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 model = contact!!.photoUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(24.dp)
+                modifier = Modifier.fillMaxSize().blur(12.dp)
             )
             Box(
                 modifier = Modifier
@@ -114,14 +114,6 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                     ),
                     color = subtitleColor,
                 )
-                if (session.state == CallState.CONFIRMED) {
-                    Text(
-                        text = formatDuration(elapsedSeconds),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
             }
 
             Spacer(Modifier.height(8.dp))
@@ -150,9 +142,18 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 )
             }
 
-            // State label (ringing / connecting)
-            if (session.state != CallState.CONFIRMED) {
-                Spacer(Modifier.height(8.dp))
+            // State label (ringing / connecting) / Duration
+            Spacer(Modifier.height(8.dp))
+            if (session.state == CallState.CONFIRMED) {
+                Text(
+                    text = formatDuration(elapsedSeconds),
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(1f, 1f), 4f) else null
+                    ),
+                    color = textColor
+                )
+            } else {
                 PulsingStateLabel(session.state)
             }
 

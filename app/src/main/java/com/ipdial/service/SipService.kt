@@ -12,7 +12,9 @@ import android.util.Log
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -128,11 +130,7 @@ class SipService : Service() {
         createNotificationChannels()
         TelecomHelper.registerPhoneAccount(applicationContext)
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
-        } else {
-            startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
-        }
+        startServiceForeground()
 
         scope.launch {
             // 1. Initialize PJSIP
@@ -444,6 +442,7 @@ class SipService : Service() {
                     when (session.state) {
                         CallState.INCOMING -> {
                             playRingtone()
+                            updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         CallState.CONFIRMED -> {
                             stopRingtone()
@@ -452,13 +451,77 @@ class SipService : Service() {
                             acquireWakeLock()
                             lastWasConfirmed = true
                             if (callStartTime == 0L) callStartTime = System.currentTimeMillis()
+                            updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         CallState.CALLING, CallState.EARLY, CallState.CONNECTING -> {
                             routeAudioToSpeaker(session.isSpeaker)
+                            updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         else -> {}
                     }
                 }
+            }
+        }
+    }
+
+    private fun startServiceForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                // Try phoneCall type first
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    androidx.core.app.ServiceCompat.startForeground(
+                        this,
+                        NOTIF_ID_SERVICE,
+                        buildServiceNotification(),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+                    )
+                } else {
+                    startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                }
+                Log.d("SipService", "Started FGS with type phoneCall")
+            } catch (e: Exception) {
+                // Fallback to dataSync if phoneCall is not allowed (common on BOOT_COMPLETED for Android 14+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    try {
+                        androidx.core.app.ServiceCompat.startForeground(
+                            this,
+                            NOTIF_ID_SERVICE,
+                            buildServiceNotification(),
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
+                        Log.d("SipService", "Started FGS with type dataSync fallback")
+                    } catch (ex: Exception) {
+                        Log.e("SipService", "Failed to start FGS with dataSync fallback", ex)
+                    }
+                } else {
+                    Log.e("SipService", "Failed to start FGS with type phoneCall", e)
+                    try {
+                        startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
+                    } catch (lastEx: Exception) {
+                        Log.e("SipService", "Absolute FGS failure", lastEx)
+                    }
+                }
+            }
+        } else {
+            startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
+        }
+    }
+
+    private fun updateForegroundType(type: Int) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    androidx.core.app.ServiceCompat.startForeground(
+                        this,
+                        NOTIF_ID_SERVICE,
+                        buildServiceNotification(),
+                        type
+                    )
+                } else {
+                    startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), type)
+                }
+            } catch (e: Exception) {
+                Log.e("SipService", "Failed to update FGS type to $type", e)
             }
         }
     }

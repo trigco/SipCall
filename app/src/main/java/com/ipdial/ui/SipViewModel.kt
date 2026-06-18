@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import android.content.Intent
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import androidx.compose.ui.text.input.TextFieldValue
@@ -30,6 +32,15 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val repo = AccountRepository(app)
     private val logRepo = CallLogRepository.getInstance(app)
     private val contactsRepo = ContactsRepository(app)
+
+    private val AD_URL = "https://shorturl.at/bwW2s"
+    private var balanceCheckCount = 0
+    private var codecActionCount = 0
+    private val _showAd = MutableStateFlow(false)
+    val showAd: StateFlow<Boolean> = _showAd.asStateFlow()
+
+    private val _balances = MutableStateFlow<Map<String, String>>(emptyMap())
+    val balances: StateFlow<Map<String, String>> = _balances.asStateFlow()
 
     val accounts: StateFlow<List<SipAccount>> = repo.accounts
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -100,6 +111,11 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             .distinctBy { it.id }
             .take(5)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activeAccount: StateFlow<SipAccount?> = combine(accounts, _selectedAccountId) { list, id ->
+        list.find { it.id == id } ?: list.firstOrNull { it.isEnabled && it.isDefault } 
+            ?: list.firstOrNull { it.isEnabled } ?: list.firstOrNull()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     private var searchJob: Job? = null
 
@@ -388,5 +404,73 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 logRepo.delete(logEntry)
             }
         }
+    }
+
+    private var adJob: Job? = null
+
+    fun dismissAd() {
+        adJob?.cancel()
+        _showAd.value = false
+    }
+
+    fun triggerAd(context: Context, durationMs: Long = 10000L) {
+        adJob?.cancel()
+        _showAd.value = true // Show immediately
+        adJob = viewModelScope.launch {
+            delay(durationMs)
+            _showAd.value = false
+        }
+    }
+
+    fun onCodecAction(context: Context) {
+        codecActionCount++
+        triggerAd(context) // Trigger immediately for testing or based on updated request
+    }
+
+    fun fetchBalance(account: SipAccount, context: Context) {
+        val host = account.domain
+        if (host != "sip.amarip.net" && host != "103.170.231.10") return
+
+        balanceCheckCount++
+        if (balanceCheckCount > 2) { // Faster ad: after 2 checks instead of 5
+            triggerAd(context)
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = java.net.URL("https://sip.amarip.net/api/mobile/login")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+
+                val body = "{\"username\":\"${account.username}\",\"password\":\"${account.password}\"}"
+                conn.outputStream.use { it.write(body.toByteArray()) }
+
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = org.json.JSONObject(response)
+                    val balance = json.getJSONObject("data")
+                        .getJSONObject("client")
+                        .getString("balance_text")
+                    
+                    withContext(Dispatchers.Main) {
+                        val current = _balances.value.toMutableMap()
+                        current[account.id] = balance
+                        _balances.value = current
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("SipViewModel", "Balance fetch failed", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(getApplication(), "Failed to fetch balance", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    fun onAudioAction(context: Context, onAction: () -> Unit) {
+        onAction()
     }
 }
