@@ -52,7 +52,11 @@ class MainActivity : ComponentActivity() {
 
     private val permissionsLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { /* handle results if needed */ }
+    ) { results ->
+        if (results[Manifest.permission.READ_CONTACTS] == true) {
+            vm.refreshContacts()
+        }
+    }
 
     private val vm: SipViewModel by viewModels()
 
@@ -216,31 +220,35 @@ fun IPDialApp() {
     val navBackStack by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStack?.destination?.route ?: NavDest.Home.route
 
+    // Navigation drawer state
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
     UpdateCheckDialog()
 
-    val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl
-
-    CompositionLocalProvider(LocalLayoutDirection provides (if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr)) {
+    // Wrap the entire app in Ltr by default, but ModalNavigationDrawer uses LocalLayoutDirection
+    // to decide which side it opens from. We want it to open from the right.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
         ModalNavigationDrawer(
             drawerState = drawerState,
             drawerContent = {
-                AppDrawerSheet(
-                    currentRoute = currentRoute,
-                    onNavigate = { route ->
-                        scope.launch { drawerState.close() }
-                        navController.navigate(route) {
-                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                // Wrap drawer content back to Ltr so text isn't flipped
+                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+                    AppDrawerSheet(
+                        currentRoute = currentRoute,
+                        onNavigate = { route ->
+                            scope.launch { drawerState.close() }
+                            navController.navigate(route) {
+                                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
                         }
-                    },
-                    isRtl = isRtl
-                )
+                    )
+                }
             }
         ) {
+            // Wrap main app content back to Ltr
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 AppScaffold(
                     vm = vm,
@@ -291,8 +299,7 @@ fun UpdateCheckDialog() {
 @Composable
 fun AppDrawerSheet(
     currentRoute: String,
-    onNavigate: (String) -> Unit,
-    isRtl: Boolean
+    onNavigate: (String) -> Unit
 ) {
     val items = listOf(
         NavDest.Home,
@@ -302,27 +309,25 @@ fun AppDrawerSheet(
         NavDest.About
     )
 
-    CompositionLocalProvider(LocalLayoutDirection provides (if (isRtl) LayoutDirection.Ltr else LayoutDirection.Rtl)) {
-        ModalDrawerSheet(
-            modifier = Modifier.width(300.dp),
-            drawerShape = androidx.compose.ui.graphics.RectangleShape
-        ) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                "Menu",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleLarge
+    ModalDrawerSheet(
+        modifier = Modifier.width(300.dp),
+        drawerShape = androidx.compose.ui.graphics.RectangleShape
+    ) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Menu",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.titleLarge
+        )
+        HorizontalDivider()
+        items.forEach { dest ->
+            NavigationDrawerItem(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
+                label = { Text(dest.label) },
+                selected = currentRoute == dest.route,
+                onClick = { onNavigate(dest.route) },
+                icon = { Icon(dest.icon, null) }
             )
-            HorizontalDivider()
-            items.forEach { dest ->
-                NavigationDrawerItem(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
-                    label = { Text(dest.label) },
-                    selected = currentRoute == dest.route,
-                    onClick = { onNavigate(dest.route) },
-                    icon = { Icon(dest.icon, null) }
-                )
-            }
         }
     }
 }

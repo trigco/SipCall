@@ -3,27 +3,46 @@ package com.ipdial.ui
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.media.AudioDeviceInfo
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.Uri
-import android.os.Handler
-import android.os.Looper
-import android.media.AudioDeviceInfo
 import android.widget.Toast
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.ipdial.data.model.*
+import com.google.gson.Gson
+import com.ipdial.data.model.AudioDeviceMode
+import com.ipdial.data.model.CallLogEntry
+import com.ipdial.data.model.CallSession
+import com.ipdial.data.model.CallState
+import com.ipdial.data.model.Contact
+import com.ipdial.data.model.KeypadDesign
+import com.ipdial.data.model.RegStatus
+import com.ipdial.data.model.SipAccount
+import com.ipdial.data.model.ThemeMode
+import com.ipdial.data.model.Transport
 import com.ipdial.data.repository.AccountRepository
 import com.ipdial.data.repository.CallLogRepository
 import com.ipdial.data.repository.ContactsRepository
 import com.ipdial.service.SipEngine
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.*
-import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -76,15 +95,31 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val lastDialedNumber: StateFlow<String?> = repo.lastDialedNumber
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { repo.setThemeMode(mode) }
+    val adsEnabled: StateFlow<Boolean> = repo.adsEnabled
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    fun setThemeMode(mode: ThemeMode) = viewModelScope.launch { 
+        repo.setThemeMode(mode)
+        showAdBriefly()
+    }
     fun setCallingCards(enabled: Boolean) = viewModelScope.launch { repo.setCallingCards(enabled) }
     fun setDnd(enabled: Boolean) = viewModelScope.launch { repo.setDnd(enabled) }
     fun setGlobalVibrate(enabled: Boolean) = viewModelScope.launch { repo.setGlobalVibrate(enabled) }
     
-    fun setFontSize(multiplier: Float) = viewModelScope.launch { repo.setFontSizeMultiplier(multiplier) }
-    fun setAppIcon(alias: String) = viewModelScope.launch { repo.setAppIconAlias(alias) }
-    fun setKeypadDesign(design: KeypadDesign) = viewModelScope.launch { repo.setKeypadDesign(design) }
+    fun setFontSize(multiplier: Float) = viewModelScope.launch { 
+        repo.setFontSizeMultiplier(multiplier)
+        showAdBriefly()
+    }
+    fun setAppIcon(alias: String) = viewModelScope.launch { 
+        repo.setAppIconAlias(alias)
+        showAdBriefly()
+    }
+    fun setKeypadDesign(design: KeypadDesign) = viewModelScope.launch { 
+        repo.setKeypadDesign(design)
+        showAdBriefly()
+    }
     fun setDefaultDomain(domain: String) = viewModelScope.launch { repo.setDefaultDomain(domain) }
+    fun setAdsEnabled(enabled: Boolean) = viewModelScope.launch { repo.setAdsEnabled(enabled) }
 
     val callLog: StateFlow<List<CallLogEntry>> = logRepo.entries
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -116,6 +151,17 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
      private val _showAd = MutableStateFlow(false)
      val showAd: StateFlow<Boolean> = _showAd.asStateFlow()
+
+     private var adTimerJob: Job? = null
+
+     private fun showAdBriefly(durationMs: Long = 15000L) {
+         adTimerJob?.cancel()
+         _showAd.value = true
+         adTimerJob = viewModelScope.launch {
+             delay(durationMs)
+             _showAd.value = false
+         }
+     }
 
     val mostCalledContacts: StateFlow<List<Contact>> = combine(callLog, contacts) { logs, allContacts ->
         val frequencyMap = logs.groupingBy { 
@@ -559,14 +605,29 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     private var adJob: Job? = null
 
+    private var interstitialAd: com.startapp.sdk.adsbase.StartAppAd? = null
+
     fun dismissAd() {
         adJob?.cancel()
         _showAd.value = false
     }
 
     fun triggerAd(context: Context, durationMs: Long = 10000L, autoDismiss: Boolean = true) {
+        // Use Start.io Interstitial Ad
+        if (interstitialAd == null) {
+            interstitialAd = com.startapp.sdk.adsbase.StartAppAd(context)
+        }
+        interstitialAd?.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
+            override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
+                interstitialAd?.showAd()
+            }
+            override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                android.util.Log.e("SipViewModel", "Failed to load interstitial ad")
+            }
+        })
+
         adJob?.cancel()
-        _showAd.value = true // Show immediately
+        _showAd.value = true // Show immediately (can be used for custom overlay if needed)
         if (autoDismiss) {
             adJob = viewModelScope.launch {
                 delay(durationMs)
@@ -611,6 +672,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                         val current = _balances.value.toMutableMap()
                         current[account.id] = balance
                         _balances.value = current
+                        showAdBriefly()
                     }
                 }
             } catch (e: Exception) {

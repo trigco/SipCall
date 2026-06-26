@@ -32,6 +32,7 @@ class AccountRepository(private val context: Context) {
     private val KEYPAD_DESIGN_KEY = stringPreferencesKey("keypad_design")
     private val DEFAULT_DOMAIN_KEY = stringPreferencesKey("default_domain")
     private val LAST_DIALED_KEY = stringPreferencesKey("last_dialed")
+    private val ADS_ENABLED_KEY = booleanPreferencesKey("ads_enabled")
 
     val accounts: Flow<List<SipAccount>> = context.dataStore.data.map { prefs ->
         val json = prefs[ACCOUNTS_KEY] ?: return@map emptyList()
@@ -68,6 +69,8 @@ class AccountRepository(private val context: Context) {
 
     val lastDialedNumber: Flow<String?> = context.dataStore.data.map { it[LAST_DIALED_KEY] }
 
+    val adsEnabled: Flow<Boolean> = context.dataStore.data.map { it[ADS_ENABLED_KEY] ?: true }
+
     suspend fun setThemeMode(mode: ThemeMode) = context.dataStore.edit { it[THEME_KEY] = mode.name }
     suspend fun setCallingCards(enabled: Boolean) = context.dataStore.edit { it[CALLING_CARDS_KEY] = enabled }
     suspend fun setDnd(enabled: Boolean) = context.dataStore.edit { it[DND_KEY] = enabled }
@@ -78,6 +81,7 @@ class AccountRepository(private val context: Context) {
     suspend fun setKeypadDesign(design: KeypadDesign) = context.dataStore.edit { it[KEYPAD_DESIGN_KEY] = design.name }
     suspend fun setDefaultDomain(domain: String) = context.dataStore.edit { it[DEFAULT_DOMAIN_KEY] = domain }
     suspend fun setLastDialedNumber(number: String) = context.dataStore.edit { it[LAST_DIALED_KEY] = number }
+    suspend fun setAdsEnabled(enabled: Boolean) = context.dataStore.edit { it[ADS_ENABLED_KEY] = enabled }
 
     suspend fun setGlobalRingtone(uri: String?) {
         context.dataStore.edit { prefs ->

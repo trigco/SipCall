@@ -8,6 +8,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -69,260 +70,274 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
-
-        // Suggested contacts space
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            if (dialString.isEmpty() && mostCalled.isNotEmpty()) {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    item {
-                        Text(
-                            text = "Most Called",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
-                        )
-                    }
-                    items(mostCalled, key = { it.id }) { contact ->
-                        SuggestedContactRow(contact) { num ->
-                            vm.clearDial()
-                            num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                            vm.makeCall()
-                        }
-                    }
-                }
-            } else if (suggestedContacts.isNotEmpty()) {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(suggestedContacts, key = { it.id }) { contact ->
-                        SuggestedContactRow(contact) { num ->
-                            vm.clearDial()
-                            num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                            vm.makeCall()
-                        }
-                    }
-                }
-            } else if (dialString.isNotEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        "No matching contacts",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                }
-            }
-        }
-
-        // Dial display row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Box {
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
-                    if (clipboardManager.hasText()) {
-                        DropdownMenuItem(
-                            text = { Text("Paste") },
-                            onClick = {
-                                showMenu = false
-                                clipboardManager.getText()?.text?.let { text ->
-                                    text.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
-                                }
-                            }
-                        )
-                    }
-                    DropdownMenuItem(
-                        text = { Text("Add to contact") },
-                        onClick = { 
-                            showMenu = false
-                            val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
-                                type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
-                                putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, dialString)
-                            }
-                            context.startActivity(intent)
-                        }
-                    )
-                }
-            }
-
-            InterceptPlatformTextInput(
-                interceptor = { _, _ -> awaitCancellation() }
-            ) {
-                BasicTextField(
-                    value = dialTextFieldValue,
-                    onValueChange = { vm.setDialString(it) },
-                    textStyle = MaterialTheme.typography.displayMedium.copy(
-                        fontSize = if (dialString.length > 10) 32.sp else 48.sp,
-                        fontWeight = FontWeight.Normal,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        textAlign = TextAlign.Center
-                    ),
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    singleLine = true,
-                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+    Scaffold(
+        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
+        bottomBar = {
+            val showAd by vm.showAd.collectAsState()
+            if (showAd) {
+                com.ipdial.ui.StartIoBanner(
+                    vm = vm,
+                    modifier = Modifier.fillMaxWidth().padding(8.dp)
                 )
             }
-
-            AnimatedVisibility(visible = dialString.isNotEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .combinedClickable(
-                            onClick = { vm.backspace() },
-                            onLongClick = {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                vm.clearDial()
-                            }
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Backspace,
-                        contentDescription = "Backspace",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            if (dialString.isEmpty()) Spacer(Modifier.size(48.dp))
         }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .background(MaterialTheme.colorScheme.background),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
 
-        Spacer(Modifier.height(8.dp))
-
-        // Keypad grid
-        val keys = listOf(
-            Triple("1", "⠀", null),
-            Triple("2", "ABC", null),
-            Triple("3", "DEF", null),
-            Triple("4", "GHI", null),
-            Triple("5", "JKL", null),
-            Triple("6", "MNO", null),
-            Triple("7", "PQRS", null),
-            Triple("8", "TUV", null),
-            Triple("9", "WXYZ", null),
-            Triple("*", "", null),
-            Triple("0", "+", null),
-            Triple("#", "", null),
-        )
-
-        if (keypadDesign == KeypadDesign.Rounded) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 48.dp) // Narrower for iOS look
-            ) {
-                keys.chunked(3).forEach { row ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(80.dp), // Fixed height regardless of font size
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        row.forEach { (digit, sub, _) ->
-                            DialKeyRounded(
-                                digit = digit,
-                                subLabel = sub,
-                                onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    vm.dialPad(digit[0])
-                                },
-                                onLongClick = if (digit == "0") {
-                                    {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        vm.dialPad('+')
-                                    }
-                                } else null,
-                                modifier = Modifier.weight(1f)
+            // Suggested contacts space
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (dialString.isEmpty() && mostCalled.isNotEmpty()) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        item {
+                            Text(
+                                text = "Most Called",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp)
                             )
                         }
+                        itemsIndexed(mostCalled, key = { _, it -> it.id }) { _, contact ->
+                            SuggestedContactRow(contact) { num ->
+                                vm.clearDial()
+                                num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                vm.makeCall()
+                            }
+                        }
+                    }
+                } else if (suggestedContacts.isNotEmpty()) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(suggestedContacts, key = { it.id }) { contact ->
+                            SuggestedContactRow(contact) { num ->
+                                vm.clearDial()
+                                num.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
+                                vm.makeCall()
+                            }
+                        }
+                    }
+                } else if (dialString.isNotEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            "No matching contacts",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.outline
+                        )
                     }
                 }
             }
-        } else {
-            Column(
+
+            // Dial display row
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 0.dp)
-                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                keys.chunked(3).forEach { row ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(60.dp) // Fixed height regardless of font size
-                    ) {
-                        row.forEachIndexed { colIndex, (digit, sub, _) ->
-                            DialKey(
-                                digit = digit,
-                                subLabel = sub,
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "More",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                        if (clipboardManager.hasText()) {
+                            DropdownMenuItem(
+                                text = { Text("Paste") },
                                 onClick = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                    vm.dialPad(digit[0])
-                                },
-                                onLongClick = if (digit == "0") {
-                                    {
-                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        vm.dialPad('+')
+                                    showMenu = false
+                                    clipboardManager.getText()?.text?.let { text ->
+                                        text.filter { it.isDigit() || it == '+' }.forEach { vm.dialPad(it) }
                                     }
-                                } else null,
-                                modifier = Modifier.weight(1f)
+                                }
                             )
-                            if (colIndex < 2) {
-                                VerticalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
-                                    modifier = Modifier.fillMaxHeight().width(1.dp)
+                        }
+                        DropdownMenuItem(
+                            text = { Text("Add to contact") },
+                            onClick = { 
+                                showMenu = false
+                                val intent = android.content.Intent(android.content.Intent.ACTION_INSERT).apply {
+                                    type = android.provider.ContactsContract.Contacts.CONTENT_TYPE
+                                    putExtra(android.provider.ContactsContract.Intents.Insert.PHONE, dialString)
+                                }
+                                context.startActivity(intent)
+                            }
+                        )
+                    }
+                }
+
+                InterceptPlatformTextInput(
+                    interceptor = { _, _ -> awaitCancellation() }
+                ) {
+                    BasicTextField(
+                        value = dialTextFieldValue,
+                        onValueChange = { vm.setDialString(it) },
+                        textStyle = MaterialTheme.typography.displayMedium.copy(
+                            fontSize = if (dialString.length > 10) 32.sp else 48.sp,
+                            fontWeight = FontWeight.Normal,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            textAlign = TextAlign.Center
+                        ),
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        singleLine = true,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                    )
+                }
+
+                AnimatedVisibility(visible = dialString.isNotEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .combinedClickable(
+                                onClick = { vm.backspace() },
+                                onLongClick = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    vm.clearDial()
+                                }
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Backspace,
+                            contentDescription = "Backspace",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (dialString.isEmpty()) Spacer(Modifier.size(48.dp))
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Keypad grid
+            val keys = listOf(
+                Triple("1", "⠀", null),
+                Triple("2", "ABC", null),
+                Triple("3", "DEF", null),
+                Triple("4", "GHI", null),
+                Triple("5", "JKL", null),
+                Triple("6", "MNO", null),
+                Triple("7", "PQRS", null),
+                Triple("8", "TUV", null),
+                Triple("9", "WXYZ", null),
+                Triple("*", "", null),
+                Triple("0", "+", null),
+                Triple("#", "", null),
+            )
+
+            if (keypadDesign == KeypadDesign.Rounded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 48.dp) // Narrower for iOS look
+                ) {
+                    keys.chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp), // Fixed height regardless of font size
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            row.forEach { (digit, sub, _) ->
+                                DialKeyRounded(
+                                    digit = digit,
+                                    subLabel = sub,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        vm.dialPad(digit[0])
+                                    },
+                                    onLongClick = if (digit == "0") {
+                                        {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            vm.dialPad('+')
+                                        }
+                                    } else null,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                 }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .width(160.dp)
-                .height(56.dp)
-                .clip(RoundedCornerShape(28.dp))
-                .background(ForestGreen)
-                .clickableWithRipple { 
-                    if (dialString.isEmpty() && !lastDialedNumber.isNullOrEmpty()) {
-                        vm.setDialString(androidx.compose.ui.text.input.TextFieldValue(lastDialedNumber!!))
-                    } else if (dialString.isNotEmpty()) {
-                        vm.makeCall()
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 0.dp)
+                        .background(MaterialTheme.colorScheme.surface)
+                ) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    keys.chunked(3).forEach { row ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(60.dp) // Fixed height regardless of font size
+                        ) {
+                            row.forEachIndexed { colIndex, (digit, sub, _) ->
+                                DialKey(
+                                    digit = digit,
+                                    subLabel = sub,
+                                    onClick = {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        vm.dialPad(digit[0])
+                                    },
+                                    onLongClick = if (digit == "0") {
+                                        {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            vm.dialPad('+')
+                                        }
+                                    } else null,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (colIndex < 2) {
+                                    VerticalDivider(
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                                        modifier = Modifier.fillMaxHeight().width(1.dp)
+                                    )
+                                }
+                            }
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     }
                 }
-        ) {
-            Icon(
-                imageVector = Icons.Default.Call,
-                contentDescription = "Call",
-                tint = Color.White,
-                modifier = Modifier.size(28.dp)
-            )
-        }
+            }
 
-        Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
+
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .width(160.dp)
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(ForestGreen)
+                    .clickableWithRipple { 
+                        if (dialString.isEmpty() && !lastDialedNumber.isNullOrEmpty()) {
+                            vm.setDialString(androidx.compose.ui.text.input.TextFieldValue(lastDialedNumber!!))
+                        } else if (dialString.isNotEmpty()) {
+                            vm.makeCall()
+                        }
+                    }
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = "Call",
+                    tint = Color.White,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+        }
     }
 
     val showAccountSelection by vm.showAccountSelectionDialog.collectAsState()

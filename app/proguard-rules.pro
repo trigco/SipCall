@@ -31,3 +31,7 @@
     public static *** v(...);
     public static *** i(...);
 }
+
+# Start.io Ads
+-keep class com.startapp.** { *; }
+-dontwarn com.startapp.**

@@ -136,7 +136,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         Row(
                             Modifier.fillMaxWidth().clickable {
                                 vm.setFontSize(multiplier)
-                                vm.triggerAd(context) // Trigger ad for font size change
                                 showFontSizeDialog = false
                             }.padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -186,7 +185,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                                         .clickable {
                                             vm.setAppIcon(alias)
                                             com.ipdial.util.AppIconHelper.setAppIcon(context, alias)
-                                            vm.triggerAd(context)
                                             showAppIconDialog = false
                                             showRestartDialog = true
                                         }
@@ -256,7 +254,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                                     val updated = account.copy(codec = codec)
                                     vm.saveAccount(updated)
                                     showCodecDialog = false
-                                    vm.dismissAd()
                                 }
                             }.padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -275,6 +272,12 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+        },
+        bottomBar = {
+            com.ipdial.ui.StartIoBanner(
+                vm = vm,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            )
         }
     ) { padding ->
         LazyColumn(
@@ -361,7 +364,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     title = "Select Audio Codec",
                     subtitle = activeAccount?.codec?.name ?: "Select Codec",
                     onClick = {
-                        vm.onCodecAction(context)
                         if (activeAccount != null) {
                             showCodecDialog = true
                         } else {
