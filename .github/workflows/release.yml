@@ -27,6 +27,38 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      - name: Create dummy google-services.json if missing
+        run: |
+          if [ ! -f app/google-services.json ]; then
+            echo '{
+              "project_info": {
+                "project_number": "000000000000",
+                "project_id": "dummy-id"
+              },
+              "client": [
+                {
+                  "client_info": {
+                    "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                    "android_client_info": {
+                      "package_name": "com.ipdial"
+                    }
+                  },
+                  "api_key": [
+                    {
+                      "current_key": "dummy-key"
+                    }
+                  ],
+                  "services": {
+                    "appinvite_service": {
+                      "other_platform_oauth_client": []
+                    }
+                  }
+                }
+              ],
+              "configuration_version": "1"
+            }' > app/google-services.json
+          fi
+
       - name: Build Release APKs
         run: ./gradlew assembleRelease
 
