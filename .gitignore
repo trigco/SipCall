@@ -1,7 +1,15 @@
 # Project exclude paths
 /.gradle/
 /app/build/
+/app/release/
 /build/
+/captures/
+/.externalNativeBuild/
+
+# Artifacts
+*.apk
+*.aab
+*.output
 
 # Keystore
 keystore.properties
