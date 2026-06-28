@@ -78,6 +78,12 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+        },
+        bottomBar = {
+            com.ipdial.ui.StartIoBanner(
+                vm = vm,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            )
         }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
@@ -92,28 +98,29 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                             file = file,
                             isPlaying = playingFile == file,
                             onPlay = {
-                                vm.incrementRecordingAction(context)
-                                if (playingFile == file) {
-                                    try {
-                                        mediaPlayer.stop()
-                                        mediaPlayer.reset()
-                                    } catch (e: Exception) {}
-                                    playingFile = null
-                                } else {
-                                    try {
-                                        mediaPlayer.reset()
-                                        java.io.FileInputStream(file).use { fis ->
-                                            mediaPlayer.setDataSource(fis.fd)
-                                        }
-                                        mediaPlayer.prepare()
-                                        mediaPlayer.start()
-                                        playingFile = file
-                                        mediaPlayer.setOnCompletionListener { 
-                                            playingFile = null
-                                        }
-                                    } catch (e: Exception) {
+                                vm.incrementRecordingAction {
+                                    if (playingFile == file) {
+                                        try {
+                                            mediaPlayer.stop()
+                                            mediaPlayer.reset()
+                                        } catch (e: Exception) {}
                                         playingFile = null
-                                        android.widget.Toast.makeText(context, "Playback failed", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        try {
+                                            mediaPlayer.reset()
+                                            java.io.FileInputStream(file).use { fis ->
+                                                mediaPlayer.setDataSource(fis.fd)
+                                            }
+                                            mediaPlayer.prepare()
+                                            mediaPlayer.start()
+                                            playingFile = file
+                                            mediaPlayer.setOnCompletionListener { 
+                                                playingFile = null
+                                            }
+                                        } catch (e: Exception) {
+                                            playingFile = null
+                                            android.widget.Toast.makeText(context, "Playback failed", android.widget.Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             },
@@ -131,21 +138,22 @@ fun RecordingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                                 recordings = (iList + eList).sortedByDescending { it.lastModified() }
                             },
                             onShare = {
-                                vm.incrementRecordingAction(context)
-                                try {
-                                    val uri = androidx.core.content.FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.provider",
-                                        file
-                                    )
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "audio/*"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                vm.incrementRecordingAction {
+                                    try {
+                                        val uri = androidx.core.content.FileProvider.getUriForFile(
+                                            context,
+                                            "${context.packageName}.provider",
+                                            file
+                                        )
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "audio/*"
+                                            putExtra(Intent.EXTRA_STREAM, uri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Share/Export Recording"))
+                                    } catch (e: Exception) {
+                                        android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                     }
-                                    context.startActivity(Intent.createChooser(intent, "Share/Export Recording"))
-                                } catch (e: Exception) {
-                                    android.widget.Toast.makeText(context, "Error: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
                                 }
                             }
                         )

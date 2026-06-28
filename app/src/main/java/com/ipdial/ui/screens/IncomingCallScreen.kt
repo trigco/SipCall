@@ -108,12 +108,13 @@ fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
             text = displayName,
             style = MaterialTheme.typography.displayMedium.copy(
                 fontWeight = FontWeight.SemiBold, // Increased weight
-                fontSize = 40.sp, // Increased from 34
+                fontSize = if (displayName.length > 12) 30.sp else 40.sp,
                 shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(2f, 2f), 8f) else null
             ),
             textAlign = TextAlign.Center,
             color = textColor,
-            modifier = Modifier.padding(horizontal = 24.dp)
+            modifier = Modifier.padding(horizontal = 24.dp),
+            maxLines = 1
         )
 
         if (displayName != vm.cleanUri(session.remoteUri)) {

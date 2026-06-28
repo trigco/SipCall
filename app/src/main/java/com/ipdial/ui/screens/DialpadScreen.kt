@@ -71,17 +71,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     }
 
     Scaffold(
-        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
-        bottomBar = {
-            val isPro by vm.isPro.collectAsState()
-            val showAd by vm.showAd.collectAsState()
-            if (!isPro && showAd) {
-                com.ipdial.ui.StartIoBanner(
-                    vm = vm,
-                    modifier = Modifier.fillMaxWidth().padding(8.dp)
-                )
-            }
-        }
+        contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom)
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -131,6 +121,16 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                         )
                     }
                 }
+            }
+
+            // Ad above digit box
+            val isPro by vm.isPro.collectAsState()
+            val showAd by vm.showAd.collectAsState()
+            if (!isPro && showAd) {
+                com.ipdial.ui.StartIoBanner(
+                    vm = vm,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+                )
             }
 
             // Dial display row

@@ -146,4 +146,9 @@ class SipConnection : Connection() {
         SipConnectionService.removeConnection(callId)
         destroy()
     }
+
+    @Deprecated("Deprecated in Java", ReplaceWith("onCallAudioStateChanged(state)"))
+    override fun onCallAudioStateChanged(state: CallAudioState?) {
+        Log.d("SipConnection", "onCallAudioStateChanged: $state")
+    }
 }

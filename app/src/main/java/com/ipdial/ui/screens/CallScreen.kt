@@ -161,12 +161,13 @@ fun CallScreen(vm: SipViewModel, session: CallSession) {
                 text = displayName,
                 style = MaterialTheme.typography.displayMedium.copy(
                     fontWeight = FontWeight.SemiBold, // Increased weight
-                    fontSize = if (displayName.length > 16) 32.sp else 42.sp, // Increased from 28/36
+                    fontSize = if (displayName.length > 12) 30.sp else 42.sp,
                     shadow = if (isFullScreenPhoto) Shadow(Color.Black, Offset(2f, 2f), 8f) else null
                 ),
                 color = textColor,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 24.dp),
+                maxLines = 1
             )
 
             if (displayName != vm.cleanUri(session.remoteUri)) {
@@ -372,7 +373,18 @@ fun CallControlButton(
 
 @Composable
 fun InCallDialpad(vm: SipViewModel, onHide: () -> Unit) {
+    var dtmfString by remember { mutableStateOf("") }
+    
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        // Display pressed digits
+        Text(
+            text = dtmfString,
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(vertical = 16.dp),
+            textAlign = TextAlign.Center
+        )
+
         TextButton(onClick = onHide) {
             Text("Hide keypad")
         }
@@ -396,7 +408,10 @@ fun InCallDialpad(vm: SipViewModel, onHide: () -> Unit) {
                                 .weight(1f)
                                 .height(52.dp)
                                 .clip(RoundedCornerShape(50))
-                                .clickableNoRipple { vm.dialPad(digit[0]) }
+                                .clickableNoRipple { 
+                                    dtmfString += digit
+                                    vm.dialPad(digit[0]) 
+                                }
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Text(

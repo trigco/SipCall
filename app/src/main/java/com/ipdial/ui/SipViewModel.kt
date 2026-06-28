@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.ipdial.data.repository.FirestorePointsSync
 import kotlinx.coroutines.withContext
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
@@ -51,6 +52,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val repo = AccountRepository(app)
     private val logRepo = CallLogRepository.getInstance(app)
     private val contactsRepo = ContactsRepository(app)
+    // Firestore sync manager (initialized in init)
+    private var firestoreSync: FirestorePointsSync? = null
 
     private val _balances = MutableStateFlow<Map<String, String>>(emptyMap())
     val balances: StateFlow<Map<String, String>> = _balances.asStateFlow()
@@ -133,6 +136,20 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     fun setDefaultDomain(domain: String) = viewModelScope.launch { repo.setDefaultDomain(domain) }
     fun setAdsEnabled(enabled: Boolean) = viewModelScope.launch { repo.setAdsEnabled(enabled) }
 
+    fun getReferralCode(): String {
+        return try {
+            android.provider.Settings.Secure.getString(getApplication<Application>().contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
+        } catch (_: Exception) { "" }
+    }
+
+    fun claimReferral(code: String, onComplete: (Boolean, String) -> Unit) {
+        try {
+            firestoreSync?.claimReferral(code, onComplete) ?: onComplete(false, "Service unavailable")
+        } catch (e: Exception) {
+            onComplete(false, e.message ?: "error")
+        }
+    }
+
     fun redeemPoints(days: Int) = viewModelScope.launch {
         val cost = when(days) {
             1 -> 1
@@ -146,6 +163,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             val currentExp = maxOf(proExpiration.value, System.currentTimeMillis())
             val newExp = currentExp + (days * 24 * 60 * 60 * 1000L)
             repo.setProExpiration(newExp)
+            // push update to Firestore
+            try { firestoreSync?.pushUpdate(proPoints.value - cost, newExp) } catch (_: Exception) {}
         }
     }
 
@@ -155,7 +174,10 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         // Define common success logic
         val grantReward = {
             viewModelScope.launch {
-                repo.setProPoints(proPoints.value + 1)
+                val newPoints = proPoints.value + 1
+                repo.setProPoints(newPoints)
+                // push update to Firestore
+                try { firestoreSync?.pushUpdate(newPoints, proExpiration.value) } catch (_: Exception) {}
                 onReward()
             }
         }
@@ -171,36 +193,81 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 rewardedAd.showAd()
             }
             override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                // Fallback to Interstitial if Rewarded fails
-                val interstitialFallback = com.startapp.sdk.adsbase.StartAppAd(context)
-                interstitialFallback.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
-                    override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
-                        interstitialFallback.showAd(object : com.startapp.sdk.adsbase.adlisteners.AdDisplayListener {
-                            override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
-                            override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {
-                                Toast.makeText(context, "No ads available. Please try again later.", Toast.LENGTH_SHORT).show()
-                            }
-                            override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
-                            override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) {
-                                grantReward()
-                            }
-                        })
-                    }
-                    override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                        Toast.makeText(context, "Failed to load ads. Please check your connection.", Toast.LENGTH_SHORT).show()
-                    }
-                })
+                // Fallback to interstitial
+                triggerInterstitialAd(context) {
+                    grantReward()
+                }
             }
         })
     }
 
-    fun incrementRecordingAction(context: Context) = viewModelScope.launch {
+    fun triggerInterstitialAd(context: Context, onComplete: (() -> Unit)? = null) {
+        if (isPro.value) {
+            onComplete?.invoke()
+            return
+        }
+        val startAppAd = com.startapp.sdk.adsbase.StartAppAd(context)
+        startAppAd.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
+            override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
+                startAppAd.showAd(object : com.startapp.sdk.adsbase.adlisteners.AdDisplayListener {
+                    override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
+                    override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) { onComplete?.invoke() }
+                    override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
+                    override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) { onComplete?.invoke() }
+                })
+            }
+            override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                onComplete?.invoke()
+            }
+        })
+    }
+
+    fun showProPopup() {
+        _showProBlockPopup.value = true
+    }
+
+    fun dismissProPopup() {
+        _showProBlockPopup.value = false
+    }
+
+    fun showAdGate(onAdWatched: () -> Unit) {
+        if (isPro.value) {
+            onAdWatched()
+        } else {
+            _adGateCallback.value = onAdWatched
+        }
+    }
+
+    fun dismissAdGate() {
+        _adGateCallback.value = null
+    }
+
+    fun triggerAdGate(context: Context) {
+        val callback = _adGateCallback.value
+        _adGateCallback.value = null
+        if (callback != null) {
+            triggerInterstitialAd(context) {
+                callback()
+            }
+        }
+    }
+
+    fun incrementRecordingAction(onAction: () -> Unit) = viewModelScope.launch {
+        if (isPro.value) {
+            onAction()
+            return@launch
+        }
         val next = recordingCounter.value + 1
-        if (next >= 3) {
-            repo.setRecordingCounter(0)
-            if (!isPro.value) triggerAd(context)
+        if (next >= 5) {
+            showAdGate {
+                viewModelScope.launch {
+                    repo.setRecordingCounter(0)
+                    onAction()
+                }
+            }
         } else {
             repo.setRecordingCounter(next)
+            onAction()
         }
     }
 
@@ -244,6 +311,12 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
      private val _showAd = MutableStateFlow(false)
      val showAd: StateFlow<Boolean> = _showAd.asStateFlow()
+
+     private val _showProBlockPopup = MutableStateFlow(false)
+     val showProBlockPopup: StateFlow<Boolean> = _showProBlockPopup.asStateFlow()
+
+     private val _adGateCallback = MutableStateFlow<(() -> Unit)?>(null)
+     val adGateCallback: StateFlow<(() -> Unit)?> = _adGateCallback.asStateFlow()
 
      private var adTimerJob: Job? = null
 
@@ -326,6 +399,12 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
         refreshContacts()
+
+        // Initialize Firestore sync for points/expiration
+        try {
+            firestoreSync = FirestorePointsSync(app, repo)
+            firestoreSync?.startListening()
+        } catch (_: Exception) {}
 
         // Clear keypad after call ends
         viewModelScope.launch {
@@ -708,21 +787,10 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     fun triggerAd(context: Context, durationMs: Long = 10000L, autoDismiss: Boolean = true) {
         if (isPro.value) return
-        // Use Start.io Interstitial Ad
-        if (interstitialAd == null) {
-            interstitialAd = com.startapp.sdk.adsbase.StartAppAd(context)
-        }
-        interstitialAd?.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
-            override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
-                interstitialAd?.showAd()
-            }
-            override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                android.util.Log.e("SipViewModel", "Failed to load interstitial ad")
-            }
-        })
-
+        // Replace interstitial usage with banner display: set showAd flag and let UI show banner composable
+        try { interstitialAd = null } catch (_: Exception) {}
         adJob?.cancel()
-        _showAd.value = true // Show immediately (can be used for custom overlay if needed)
+        _showAd.value = true
         if (autoDismiss) {
             adJob = viewModelScope.launch {
                 delay(durationMs)

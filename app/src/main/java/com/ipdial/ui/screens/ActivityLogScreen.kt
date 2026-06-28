@@ -86,6 +86,12 @@ fun ActivityLogScreen(
                     titleContentColor = MaterialTheme.colorScheme.primary
                 )
             )
+        },
+        bottomBar = {
+            com.ipdial.ui.StartIoBanner(
+                vm = vm,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            )
         }
     ) { innerPadding ->
         Box(

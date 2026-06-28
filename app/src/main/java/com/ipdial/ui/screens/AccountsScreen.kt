@@ -85,8 +85,15 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         },
         floatingActionButton = {
             FloatingActionButton(onClick = {
-                editingAccount = null
-                showEditSheet = true
+                if (!isPro && accounts.size >= 1) {
+                    vm.showAdGate {
+                        editingAccount = null
+                        showEditSheet = true
+                    }
+                } else {
+                    editingAccount = null
+                    showEditSheet = true
+                }
             }) {
                 Icon(Icons.Default.Add, "Add Account")
             }
@@ -118,9 +125,6 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 existing = editingAccount,
                 defaultDomain = defaultDomain,
                 onSave = { 
-                    if (!isPro && editingAccount == null && accounts.isNotEmpty()) {
-                        vm.triggerAd(context)
-                    }
                     vm.saveAccount(it)
                     showEditSheet = false 
                 },

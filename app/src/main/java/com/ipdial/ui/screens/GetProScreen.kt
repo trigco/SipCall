@@ -17,7 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+// ...existing imports...
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.SipViewModel
 import java.util.concurrent.TimeUnit
@@ -34,6 +34,12 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+        },
+        bottomBar = {
+            com.ipdial.ui.StartIoBanner(
+                vm = vm,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            )
         }
     ) { padding ->
         LazyColumn(
@@ -69,9 +75,56 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     vm.redeemPoints(days)
                 }
             }
-            
+            item {
+                ReferralCard(vm = vm)
+            }
+
             item {
                 ProFeaturesList()
+            }
+        }
+    }
+}
+
+@Composable
+fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
+    val context = LocalContext.current
+    var code by remember { mutableStateOf("") }
+    val referralCode = remember { vm.getReferralCode() }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Referral", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Get 50 points per install. Share your code or enter one to claim.")
+
+            OutlinedTextField(
+                value = code,
+                onValueChange = { code = it },
+                label = { Text("Referral Code") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                Button(onClick = {
+                    if (code.isNotBlank()) {
+                        vm.claimReferral(code) { success, msg ->
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }, modifier = Modifier.weight(1f)) {
+                    Text("Apply Code")
+                }
+
+                Button(onClick = {
+                    // share referral code via system share
+                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Join IPDial & get free points")
+                        putExtra(android.content.Intent.EXTRA_TEXT, "Use my referral code: $referralCode to get 50 points in IPDial. Download here: https://github.com/nazimunaeem/IPDial/releases")
+                    }
+                    context.startActivity(android.content.Intent.createChooser(intent, "Share referral code"))
+                }) {
+                    Text("Share My Code")
+                }
             }
         }
     }
@@ -96,7 +149,7 @@ fun ProStatusCard(isPro: Boolean, expiration: Long) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = Icons.Default.Star,
+                    imageVector = if (isPro) Icons.Default.CheckCircle else Icons.Default.CardGiftcard,
                     contentDescription = null,
                     tint = if (isPro) proAccent else MaterialTheme.colorScheme.outline,
                     modifier = Modifier.size(32.dp)
@@ -213,12 +266,10 @@ fun RedemptionOptions(currentPoints: Int, onRedeem: (Int) -> Unit) {
 @Composable
 fun ProFeaturesList() {
     val features = listOf(
-        "Ad-Free Experience" to "No more banner or interstitial ads",
-        "Unlimited Accounts" to "Connect as many SIP accounts as you need",
-        "HD Audio Codecs" to "Unlock Opus and G.722 for crystal clear calls",
-        "Custom Keypad" to "Switch between different dialpad designs",
-        "Premium Icons" to "Personalize your home screen with unique icons",
-        "Advanced Branding" to "Enhanced UI with premium Pro styling"
+        "No Ads" to "Clean, ad-free calling.",
+        "Multiple Accounts" to "Add unlimited SIP accounts.",
+        "Unlimited Recordings" to "Record and share freely.",
+        "Full Customization" to "Custom icons and keypad."
     )
     
     Column(modifier = Modifier.padding(top = 8.dp)) {

@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -46,13 +45,10 @@ fun HomeScreen(
     @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val accounts  by vm.accounts.collectAsState()
-    val isPro by vm.isPro.collectAsState()
     val callLog   by vm.callLog.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val contactsState by vm.contacts.collectAsState()
     
-    var filterIndex by remember { mutableIntStateOf(0) } // 0: History, 1: Contacts
-    val filterLabels = remember { listOf("History", "Contacts") }
     var activeContactForNumberPicker by remember { mutableStateOf<Contact?>(null) }
     var activeHistoryEntryForDetail by remember { mutableStateOf<CallLogEntry?>(null) }
 
@@ -73,16 +69,7 @@ fun HomeScreen(
         map
     }
 
-    val filteredContacts = remember(contactsState, searchQuery, filterIndex) {
-        if (filterIndex != 1) emptyList()
-        else contactsState.filter {
-            it.name.contains(searchQuery, ignoreCase = true) ||
-                    it.numbers.any { num -> num.contains(searchQuery) }
-        }
-    }
-
-    val filteredLog = remember(callLog, filterIndex, searchQuery) {
-        if (filterIndex == 1) return@remember emptyList()
+    val filteredLog = remember(callLog, searchQuery) {
         callLog.filter { entry ->
             val matchesSearch = searchQuery.isBlank() || 
                 entry.remoteDisplayName.contains(searchQuery, ignoreCase = true) || 
@@ -131,40 +118,44 @@ fun HomeScreen(
                 onQueryChange = { vm.onSearchQueryChanged(it) }
             )
 
-            FilterChipRow(
-                modifier = Modifier.fillMaxWidth(),
-                selected = filterIndex,
-                onSelectedChange = { filterIndex = it },
-                labels = filterLabels
-            )
+            val historyListState = rememberLazyListState()
+            
+            val showSearchContactsInHistory = remember(searchQuery, filteredLog) {
+                searchQuery.isNotBlank() && filteredLog.isEmpty()
+            }
+            
+            val searchContacts = remember(contactsState, searchQuery, showSearchContactsInHistory) {
+                if (!showSearchContactsInHistory) emptyList()
+                else contactsState.filter {
+                    it.name.contains(searchQuery, ignoreCase = true) ||
+                            it.numbers.any { num -> num.contains(searchQuery) }
+                }.sortedBy { it.name.trim().lowercase() }
+            }
 
-            if (filterIndex == 1) {
-                val sortedContacts = remember(filteredContacts) {
-                    filteredContacts.sortedBy { it.name.trim().lowercase() }
-                }
-                val alphabet = remember { ('A'..'Z').toList() }
-                val letterToFirstIndex = remember(sortedContacts) {
-                    val map = mutableMapOf<Char, Int>()
-                    sortedContacts.forEachIndexed { index, contact ->
-                        val firstChar = contact.name.trim().firstOrNull()?.uppercaseChar() ?: '#'
-                        val targetChar = if (firstChar in 'A'..'Z') firstChar else '#'
-                        if (!map.containsKey(targetChar)) {
-                            map[targetChar] = index
+            LazyColumn(
+                state = historyListState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                if (grouped.isEmpty() && searchQuery.isBlank()) {
+                    item { EmptyLogPrompt() }
+                } else if (showSearchContactsInHistory) {
+                    if (searchContacts.isEmpty()) {
+                        item {
+                            Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
+                                Text("No matches found", color = MaterialTheme.colorScheme.outline)
+                            }
                         }
-                    }
-                    map
-                }
-
-                val contactsListState = rememberLazyListState()
-                val coroutineScope = rememberCoroutineScope()
-
-                Row(modifier = Modifier.fillMaxSize()) {
-                    LazyColumn(
-                        state = contactsListState,
-                        modifier = Modifier.weight(1f),
-                        contentPadding = PaddingValues(bottom = 80.dp)
-                    ) {
-                        items(sortedContacts, key = { it.id }) { contact ->
+                    } else {
+                        item {
+                            Text(
+                                text = "Contacts",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+                            )
+                        }
+                        items(searchContacts, key = { "search_" + it.id }) { contact ->
                             ContactItem(
                                 contact = contact,
                                 onNumberClick = { num -> vm.makeCall(num) },
@@ -179,123 +170,41 @@ fun HomeScreen(
                                 }
                             )
                         }
-                        if (!isPro) {
-                            item {
-                                com.ipdial.ui.StartIoBanner(
-                                    vm = vm,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-                                )
-                            }
-                        }
                     }
-
-                    AlphabetIndexer(
-                        alphabet = alphabet,
-                        letterToFirstIndex = letterToFirstIndex,
-                        onLetterSelected = { _, index ->
-                            coroutineScope.launch {
-                                contactsListState.scrollToItem(index)
-                            }
+                } else {
+                    grouped.forEach { (label, entries) ->
+                        item {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
+                            )
                         }
-                    )
-                }
-            } else {
-                val historyListState = rememberLazyListState()
-                
-                val showSearchContactsInHistory = remember(filterIndex, searchQuery, filteredLog) {
-                    filterIndex == 0 && searchQuery.isNotBlank() && filteredLog.isEmpty()
-                }
-                
-                val searchContacts = remember(contactsState, searchQuery, showSearchContactsInHistory) {
-                    if (!showSearchContactsInHistory) emptyList()
-                    else contactsState.filter {
-                        it.name.contains(searchQuery, ignoreCase = true) ||
-                                it.numbers.any { num -> num.contains(searchQuery) }
-                    }.sortedBy { it.name.trim().lowercase() }
-                }
-
-                LazyColumn(
-                    state = historyListState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 80.dp)
-                ) {
-                    if (grouped.isEmpty() && searchQuery.isBlank()) {
-                        item { EmptyLogPrompt() }
-                    } else if (showSearchContactsInHistory) {
-                        if (searchContacts.isEmpty()) {
-                            item {
-                                Box(Modifier.fillMaxWidth().padding(top = 40.dp), contentAlignment = Alignment.Center) {
-                                    Text("No matches found", color = MaterialTheme.colorScheme.outline)
+                        items(entries, key = { it.id }) { entry ->
+                            val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
+                            val contact = remember(cleanNumber, contactLookupMap) {
+                                if (cleanNumber.isEmpty()) null
+                                else if (cleanNumber.length >= 10) {
+                                    contactLookupMap[cleanNumber.takeLast(10)]
+                                } else {
+                                    contactLookupMap[cleanNumber]
                                 }
                             }
-                        } else {
-                            item {
-                                Text(
-                                    text = "Contacts",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
-                                )
-                            }
-                            items(searchContacts, key = { "search_" + it.id }) { contact ->
-                                ContactItem(
-                                    contact = contact,
-                                    onNumberClick = { num -> vm.makeCall(num) },
-                                    onContactClick = {
-                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                                            data = android.net.Uri.withAppendedPath(
-                                                android.provider.ContactsContract.Contacts.CONTENT_URI, 
-                                                contact.id
-                                            )
-                                        }
-                                        context.startActivity(intent)
-                                    }
-                                )
-                            }
-                        }
-                    } else {
-                        grouped.forEach { (label, entries) ->
-                            item {
-                                Text(
-                                    text = label,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
-                                )
-                            }
-                            items(entries, key = { it.id }) { entry ->
-                                val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
-                                val contact = remember(cleanNumber, contactLookupMap) {
-                                    if (cleanNumber.isEmpty()) null
-                                    else if (cleanNumber.length >= 10) {
-                                        contactLookupMap[cleanNumber.takeLast(10)]
-                                    } else {
-                                        contactLookupMap[cleanNumber]
-                                    }
-                                }
-                                val numberToCopy = cleanUri(entry.remoteUri).filter { it.isDigit() || it == '+' }
-                                 CallLogRow(
-                                     entry   = entry,
-                                     account = accounts.firstOrNull { it.id == entry.accountId },
-                                     contact = contact,
-                                     onClick = { activeHistoryEntryForDetail = entry },
-                                     onCall  = { vm.callBack(entry) },
-                                     onCopy = {
-                                         clipboardManager.setText(AnnotatedString(numberToCopy))
-                                         Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
-                                     },
-                                     onEdit = { onEditBeforeCall(numberToCopy) },
-                                     onDelete = { vm.deleteCallLog(entry) }
-                                 )
-                            }
-                        }
-                        if (!isPro) {
-                            item {
-                                com.ipdial.ui.StartIoBanner(
-                                    vm = vm,
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp)
-                                )
-                            }
+                            val numberToCopy = cleanUri(entry.remoteUri).filter { it.isDigit() || it == '+' }
+                             CallLogRow(
+                                 entry   = entry,
+                                 account = accounts.firstOrNull { it.id == entry.accountId },
+                                 contact = contact,
+                                 onClick = { activeHistoryEntryForDetail = entry },
+                                 onCall  = { vm.callBack(entry) },
+                                 onCopy = {
+                                     clipboardManager.setText(AnnotatedString(numberToCopy))
+                                     Toast.makeText(context, "Number copied", Toast.LENGTH_SHORT).show()
+                                 },
+                                 onEdit = { onEditBeforeCall(numberToCopy) },
+                                 onDelete = { vm.deleteCallLog(entry) }
+                             )
                         }
                     }
                 }
@@ -377,7 +286,7 @@ fun SearchBarRow(
                 decorationBox = { innerTextField ->
                     if (query.isEmpty()) {
                         Text(
-                            "Search contacts",
+                            "Search history",
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -388,44 +297,6 @@ fun SearchBarRow(
             if (query.isNotEmpty()) {
                 IconButton(onClick = { onQueryChange("") }) {
                     Icon(Icons.Default.Close, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun FilterChipRow(
-    modifier: Modifier = Modifier,
-    selected: Int,
-    onSelectedChange: (Int) -> Unit,
-    labels: List<String>
-) {
-    Row(
-        modifier = modifier
-            .padding(horizontal = 4.dp, vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        labels.forEachIndexed { index, label ->
-            Surface(
-                onClick = { onSelectedChange(index) },
-                shape = RoundedCornerShape(16.dp),
-                color = if (selected == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier
-                    .weight(1f)
-                    .height(32.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 9.sp,
-                            fontWeight = if (selected == index) FontWeight.Bold else FontWeight.Normal
-                        ),
-                        color = if (selected == index) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center
-                    )
                 }
             }
         }

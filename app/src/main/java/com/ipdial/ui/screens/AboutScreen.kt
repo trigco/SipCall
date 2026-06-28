@@ -65,6 +65,12 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         catch (e: Exception) { "1.0" }
     }
 
+    val deviceId = remember(context) {
+        try {
+            android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "Unknown"
+        } catch (e: Exception) { "Unknown" }
+    }
+
     val appIconBitmap = remember(context) {
         try {
             val drawable = androidx.core.content.ContextCompat.getDrawable(context, R.mipmap.ic_launcher)
@@ -85,6 +91,12 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+        },
+        bottomBar = {
+            com.ipdial.ui.StartIoBanner(
+                vm = vm,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            )
         }
     ) { padding ->
         Column(
@@ -135,6 +147,46 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 fontWeight = FontWeight.Bold
             )
             
+            Spacer(Modifier.height(32.dp))
+
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        clipboardManager.setText(AnnotatedString(deviceId))
+                        android.widget.Toast.makeText(context, "Device ID copied", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "Device ID",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = deviceId,
+                            style = MaterialTheme.typography.bodySmall,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            imageVector = Icons.Default.ContentCopy,
+                            contentDescription = "Copy",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(24.dp))
             
             Button(

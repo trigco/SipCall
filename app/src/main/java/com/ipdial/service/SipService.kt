@@ -113,6 +113,7 @@ class SipService : Service() {
     private lateinit var repo: AccountRepository
     private var wakeLock: PowerManager.WakeLock? = null
     private var cpuWakeLock: PowerManager.WakeLock? = null
+    private var audioFocusRequest: android.media.AudioFocusRequest? = null
     private val activeConfigs = java.util.concurrent.ConcurrentHashMap<String, com.ipdial.data.model.SipAccount>()
     private var isConnected = false
     private var lastNetwork: Network? = null
@@ -473,6 +474,7 @@ class SipService : Service() {
     }
 
     private fun routeAudioToDefault() {
+        requestAudioFocus()
         val session = SipEngine.callSession.value ?: return
         if (session.isSpeaker) {
             routeAudioToSpeaker(true)
@@ -513,6 +515,7 @@ class SipService : Service() {
                     lastSession = null
                 } else {
                     lastSession = session
+                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
                     
                     when (session.state) {
                         CallState.INCOMING -> {
@@ -682,7 +685,34 @@ class SipService : Service() {
 
 
 
+    private fun requestAudioFocus() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (audioFocusRequest == null) {
+                audioFocusRequest = android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                    .setAudioAttributes(
+                        android.media.AudioAttributes.Builder()
+                            .setUsage(android.media.AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setOnAudioFocusChangeListener { }
+                    .build()
+            }
+            audioManager.requestAudioFocus(audioFocusRequest!!)
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+        }
+    }
+
     private fun restoreAudio() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            audioFocusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(null)
+        }
+
         if (audioManager.mode != AudioManager.MODE_NORMAL) {
             audioManager.mode = AudioManager.MODE_NORMAL
         }

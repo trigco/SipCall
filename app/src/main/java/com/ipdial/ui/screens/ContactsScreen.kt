@@ -85,6 +85,12 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
     Scaffold(
         topBar = {
             IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+        },
+        bottomBar = {
+            com.ipdial.ui.StartIoBanner(
+                vm = vm,
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
+            )
         }
     ) { padding ->
         Column(modifier = Modifier.padding(padding)) {

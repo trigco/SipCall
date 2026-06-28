@@ -150,8 +150,13 @@ fun RegStatusIndicator(accounts: List<SipAccount>, vm: SipViewModel? = null) {
                     .clip(RoundedCornerShape(4.dp))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
                     .clickable {
-                        vm.fetchBalance(activeAccount, context)
-                        isRevealing = true
+                        if (isRevealing) {
+                            isRevealing = false
+                            vm?.dismissAd()
+                        } else {
+                            vm?.fetchBalance(activeAccount, context)
+                            isRevealing = true
+                        }
                     }
                     .padding(horizontal = 6.dp, vertical = 2.dp)
                     .widthIn(min = 60.dp),

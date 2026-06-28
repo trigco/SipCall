@@ -99,33 +99,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     var showCodecDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showAppIconDialog by remember { mutableStateOf(false) }
-    var showDefaultDomainDialog by remember { mutableStateOf(false) }
-
-    if (showDefaultDomainDialog) {
-        var tempDomain by remember { mutableStateOf(vm.defaultDomain.value) }
-        AlertDialog(
-            onDismissRequest = { showDefaultDomainDialog = false },
-            title = { Text("Set Default Domain") },
-            text = {
-                OutlinedTextField(
-                    value = tempDomain,
-                    onValueChange = { tempDomain = it },
-                    label = { Text("SIP Domain") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    vm.setDefaultDomain(tempDomain)
-                    showDefaultDomainDialog = false
-                }) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDefaultDomainDialog = false }) { Text("Cancel") }
-            }
-        )
-    }
 
     if (showFontSizeDialog) {
         AlertDialog(
@@ -366,7 +339,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     icon = Icons.Default.Audiotrack,
                     title = "Select Audio Codec",
                     subtitle = activeAccount?.codec?.name ?: "Select Codec",
-                    isPremium = true,
                     onClick = {
                         if (activeAccount != null) {
                             showCodecDialog = true
@@ -388,38 +360,57 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         1.3f -> "Extra Large"
                         else -> "Normal"
                     },
-                    isPremium = true,
                     onClick = { showFontSizeDialog = true }
                 )
             }
 
             item {
+                val isPro by vm.isPro.collectAsState()
                 SettingsRow(
                     icon = Icons.Default.GridOn,
                     title = "Keypad Design",
                     subtitle = if (keypadDesign == KeypadDesign.Rounded) "Fully Rounded" else "Grid",
-                    isPremium = true,
                     trailing = { 
                         Switch(
                             checked = keypadDesign == KeypadDesign.Rounded, 
                             onCheckedChange = { 
-                                vm.setKeypadDesign(context, if (it) KeypadDesign.Rounded else KeypadDesign.Grid)
+                                if (!isPro) {
+                                    vm.showAdGate {
+                                        vm.setKeypadDesign(context, if (it) KeypadDesign.Rounded else KeypadDesign.Grid)
+                                    }
+                                } else {
+                                    vm.setKeypadDesign(context, if (it) KeypadDesign.Rounded else KeypadDesign.Grid)
+                                }
                             }
                         ) 
                     },
                     onClick = { 
-                        vm.setKeypadDesign(context, if (keypadDesign == KeypadDesign.Rounded) KeypadDesign.Grid else KeypadDesign.Rounded)
+                        if (!isPro) {
+                            vm.showAdGate {
+                                vm.setKeypadDesign(context, if (keypadDesign == KeypadDesign.Rounded) KeypadDesign.Grid else KeypadDesign.Rounded)
+                            }
+                        } else {
+                            vm.setKeypadDesign(context, if (keypadDesign == KeypadDesign.Rounded) KeypadDesign.Grid else KeypadDesign.Rounded)
+                        }
                     }
                 )
             }
 
             item {
+                val isPro by vm.isPro.collectAsState()
                 SettingsRow(
                     icon = Icons.Default.Brush,
                     title = "Choose App Icon",
                     subtitle = appIconAlias,
-                    isPremium = true,
-                    onClick = { showAppIconDialog = true }
+                    onClick = { 
+                        if (!isPro) {
+                            vm.showAdGate {
+                                showAppIconDialog = true
+                            }
+                        } else {
+                            showAppIconDialog = true
+                        }
+                    }
                 )
             }
 
@@ -445,7 +436,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         ThemeMode.Light -> "Off"
                         ThemeMode.System -> "System (${if(systemDark) "Dark" else "Light"})"
                     },
-                    isPremium = true,
                     trailing = { 
                         Switch(
                             checked = themeMode == ThemeMode.Dark, 
@@ -453,16 +443,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                         ) 
                     },
                     onClick = { vm.setThemeMode(context, if (themeMode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) }
-                )
-            }
-
-            item {
-                val defaultDomain by vm.defaultDomain.collectAsState()
-                SettingsRow(
-                    icon = Icons.Default.Public,
-                    title = "Default SIP Domain",
-                    subtitle = defaultDomain,
-                    onClick = { showDefaultDomainDialog = true }
                 )
             }
             
@@ -505,7 +485,6 @@ fun SettingsRow(
     icon: ImageVector,
     title: String,
     subtitle: String? = null,
-    isPremium: Boolean = false,
     trailing: @Composable (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
@@ -527,22 +506,11 @@ fun SettingsRow(
             )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    if (isPremium) {
-                        Spacer(Modifier.width(4.dp))
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = "Pro",
-                            tint = Color(0xFFFFB300),
-                            modifier = Modifier.size(12.dp)
-                        )
-                    }
-                }
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
                 if (!subtitle.isNullOrBlank()) {
                     Text(
                         text = subtitle,

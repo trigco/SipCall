@@ -81,6 +81,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         
+        volumeControlStream = android.media.AudioManager.STREAM_VOICE_CALL
+        
         applyLockScreenFlags()
         
         requestRequiredPermissions()
@@ -195,6 +197,7 @@ sealed class NavDest(val route: String, val label: String, val icon: ImageVector
     object Recordings: NavDest("recordings", "Recordings", Icons.Default.Mic)
     object Logs    : NavDest("logs",    "Activity Log", Icons.AutoMirrored.Filled.List)
     object GetPro  : NavDest("get_pro",  "IPDial Pro",   Icons.Default.CardGiftcard)
+    object Privacy : NavDest("privacy",  "Privacy Policy", Icons.Default.PrivacyTip)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -307,14 +310,16 @@ fun AppDrawerSheet(
     val proExpiration by vm.proExpiration.collectAsState()
 
     val items = remember(isPro) {
+        // Always expose IPDial Pro entry in the drawer
         val list = mutableListOf(
             NavDest.Home,
             NavDest.Accounts,
             NavDest.Recordings,
             NavDest.Settings,
+            NavDest.GetPro,
+            NavDest.Privacy,
             NavDest.About
         )
-        if (isPro) list.add(NavDest.GetPro)
         list
     }
 
@@ -336,7 +341,7 @@ fun AppDrawerSheet(
                 "${dest.label} ($days days left)"
             } else dest.label
 
-            val labelColor = if (dest == NavDest.GetPro && isPro) Color(0xFFBC4749) else Color.Unspecified
+            val labelColor = if (dest == NavDest.GetPro) Color(0xFFBC4749) else Color.Unspecified
             
             NavigationDrawerItem(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp).height(44.dp),
@@ -359,6 +364,7 @@ fun AppScaffold(
     onOpenDrawer: () -> Unit,
     onShowFullIncoming: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     Scaffold(
         contentWindowInsets = WindowInsets.systemBars.only(WindowInsetsSides.Bottom),
         bottomBar = {
@@ -374,6 +380,52 @@ fun AppScaffold(
             onOpenDrawer = onOpenDrawer,
             onShowFullIncoming = onShowFullIncoming
         )
+
+        val showProPopup by vm.showProBlockPopup.collectAsState()
+        if (showProPopup) {
+            AlertDialog(
+                onDismissRequest = { vm.dismissProPopup() },
+                title = { Text("Pro Feature") },
+                text = { Text("Upgrade to IPDial Pro to unlock this feature and enjoy an ad-free experience!") },
+                confirmButton = {
+                    Button(onClick = {
+                        vm.dismissProPopup()
+                        navController.navigate(NavDest.GetPro.route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                        }
+                    }) {
+                        Text("Get Pro for Free!")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { vm.dismissProPopup() }) {
+                        Text("Later")
+                    }
+                }
+            )
+        }
+
+        val adGateCallback by vm.adGateCallback.collectAsState()
+        if (adGateCallback != null) {
+            AlertDialog(
+                onDismissRequest = { vm.dismissAdGate() },
+                title = { Text("Watch Ad to Unlock") },
+                text = { Text("Please watch a short video to use this feature for free, or upgrade to Pro for unlimited access.") },
+                confirmButton = {
+                    Button(onClick = {
+                        vm.triggerAdGate(context)
+                    }) {
+                        Text("Watch Ad")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { vm.dismissAdGate() }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
 }
 
@@ -387,14 +439,12 @@ fun AppBottomBar(
     val vm: SipViewModel = viewModel()
     val isPro by vm.isPro.collectAsState()
 
-    val bottomTabs = if (isPro) {
-        listOf(NavDest.Home, NavDest.Keypad)
-    } else {
-        listOf(NavDest.Home, NavDest.Keypad, NavDest.GetPro)
-    }
+    // Remove GetPro from the bottom bar; it is available in the drawer as "IPDial Pro"
+    val bottomTabs = listOf(NavDest.Home, NavDest.Keypad, NavDest.Contacts)
 
     val showBottomBar = (callSession == null || !showFullIncomingScreen) && 
-                        (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route || currentRoute == NavDest.GetPro.route)
+                        (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route || 
+                         currentRoute == NavDest.Contacts.route || currentRoute == NavDest.GetPro.route)
     
     if (showBottomBar) {
         NavigationBar(tonalElevation = 3.dp) {
@@ -505,6 +555,9 @@ fun AppNavHost(
         }
         composable(NavDest.About.route) { 
             AboutScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+        }
+        composable(NavDest.Privacy.route) {
+            PrivacyPolicyScreen(vm = vm, onOpenDrawer = onOpenDrawer)
         }
         composable(NavDest.GetPro.route) {
             GetProScreen(vm = vm, onOpenDrawer = onOpenDrawer)
