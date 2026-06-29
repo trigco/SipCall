@@ -463,7 +463,6 @@ object SipEngine {
                 val codecId = codec.codecId
                 val name = codecId.lowercase()
                 
-                // Keep only G729, OPUS, G722, PCMA, and PCMU. Disable all others (priority = 0)
                 val isPreferred = when (preferred) {
                     PreferredCodec.G729 -> name.contains("g729")
                     PreferredCodec.OPUS -> name.contains("opus")
@@ -471,20 +470,22 @@ object SipEngine {
                     PreferredCodec.G711U -> name.contains("pcmu")
                     PreferredCodec.G711A -> name.contains("pcma")
                 }
+
+                // Always enable these "good" codecs at a baseline priority (150).
+                // This allows PJSIP to automatically choose a compatible one if the preferred fails.
+                val isGoodCodec = name.contains("g729") || 
+                                 name.contains("opus") || 
+                                 (name.contains("g722") && !name.contains("g7221")) || 
+                                 name.contains("pcma") || 
+                                 name.contains("pcmu")
                 
-                val keep = when (preferred) {
-                    PreferredCodec.G729 -> name.contains("g729") || name.contains("opus") || name.contains("pcma") || name.contains("pcmu")
-                    PreferredCodec.OPUS -> name.contains("opus") || name.contains("g729") || name.contains("pcma") || name.contains("pcmu")
-                    PreferredCodec.G722 -> (name.contains("g722") && !name.contains("g7221")) || name.contains("g729") || name.contains("pcma") || name.contains("pcmu")
-                    PreferredCodec.G711U, PreferredCodec.G711A -> name.contains("g729") || name.contains("pcmu") || name.contains("pcma")
-                }
-                
-                if (keep) {
+                if (isGoodCodec) {
                     val priority = if (isPreferred) 250 else 150
                     ep.codecSetPriority(codecId, priority.toShort())
                 } else {
                     ep.codecSetPriority(codecId, 0.toShort())
                 }
+
             }
         } catch (e: Throwable) {
             log("Error configuring codecs: ${e.message}", true)
