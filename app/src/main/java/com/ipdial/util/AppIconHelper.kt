@@ -6,9 +6,10 @@ import android.content.pm.PackageManager
 
 object AppIconHelper {
     private const val MAIN_ACTIVITY = "com.ipdial.MainActivity"
+    private const val DEFAULT_ALIAS = "com.ipdial.MainActivityDefault"
     
     private val ALIASES = mapOf(
-        "Default" to MAIN_ACTIVITY,
+        "Default" to DEFAULT_ALIAS,
         "Green"   to "com.ipdial.MainActivityGreen",
         "Blue"    to "com.ipdial.MainActivityBlue",
         "Red"     to "com.ipdial.MainActivityRed"
@@ -18,28 +19,34 @@ object AppIconHelper {
         val pm = context.packageManager
         val packageName = context.packageName
         
-        val targetAlias = ALIASES[aliasName] ?: MAIN_ACTIVITY
+        val targetAlias = ALIASES[aliasName] ?: DEFAULT_ALIAS
 
-        // In Android, at least one activity with ACTION_MAIN/CATEGORY_LAUNCHER must be enabled.
-        // To avoid crashes and "double icons", we enable ONLY the target and disable ALL others.
+        // We only want to enable/disable the LAUNCHER aliases.
+        // The core MainActivity must ALWAYS be enabled.
         
-        val componentsToDisable = ALIASES.values.toMutableSet()
-        componentsToDisable.remove(targetAlias)
-
-        // 1. Enable the target first to ensure there's always an entry point
+        // 1. Enable the target alias
         pm.setComponentEnabledSetting(
             ComponentName(packageName, targetAlias),
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP
         )
 
-        // 2. Disable all other variants
-        componentsToDisable.forEach { component ->
-            pm.setComponentEnabledSetting(
-                ComponentName(packageName, component),
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                PackageManager.DONT_KILL_APP
-            )
+        // 2. Disable all other launcher aliases
+        ALIASES.values.forEach { alias ->
+            if (alias != targetAlias) {
+                pm.setComponentEnabledSetting(
+                    ComponentName(packageName, alias),
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP
+                )
+            }
         }
+
+        // 3. Ensure target activity itself is enabled (it doesn't have LAUNCHER category)
+        pm.setComponentEnabledSetting(
+            ComponentName(packageName, MAIN_ACTIVITY),
+            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+            PackageManager.DONT_KILL_APP
+        )
     }
 }

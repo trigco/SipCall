@@ -463,8 +463,9 @@ object SipEngine {
                 val codecId = codec.codecId
                 val name = codecId.lowercase()
                 
-                // Keep only G722, PCMA, PCMU, and OPUS. Disable all others (priority = 0)
+                // Keep only G729, OPUS, G722, PCMA, and PCMU. Disable all others (priority = 0)
                 val isPreferred = when (preferred) {
+                    PreferredCodec.G729 -> name.contains("g729")
                     PreferredCodec.OPUS -> name.contains("opus")
                     PreferredCodec.G722 -> name.contains("g722") && !name.contains("g7221")
                     PreferredCodec.G711U -> name.contains("pcmu")
@@ -472,9 +473,10 @@ object SipEngine {
                 }
                 
                 val keep = when (preferred) {
-                    PreferredCodec.OPUS -> name.contains("opus") || name.contains("pcma") || name.contains("pcmu")
-                    PreferredCodec.G722 -> (name.contains("g722") && !name.contains("g7221")) || name.contains("pcma") || name.contains("pcmu")
-                    PreferredCodec.G711U, PreferredCodec.G711A -> name.contains("pcmu") || name.contains("pcma")
+                    PreferredCodec.G729 -> name.contains("g729") || name.contains("opus") || name.contains("pcma") || name.contains("pcmu")
+                    PreferredCodec.OPUS -> name.contains("opus") || name.contains("g729") || name.contains("pcma") || name.contains("pcmu")
+                    PreferredCodec.G722 -> (name.contains("g722") && !name.contains("g7221")) || name.contains("g729") || name.contains("pcma") || name.contains("pcmu")
+                    PreferredCodec.G711U, PreferredCodec.G711A -> name.contains("g729") || name.contains("pcmu") || name.contains("pcma")
                 }
                 
                 if (keep) {

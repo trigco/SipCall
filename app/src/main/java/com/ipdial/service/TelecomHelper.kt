@@ -61,6 +61,13 @@ object TelecomHelper {
     }
 
     fun placeOutgoingCall(context: Context, number: String, accountId: String): Boolean {
+        // Self-managed ConnectionService is often buggy on Android 8.0/8.1 (API 26/27)
+        // on certain devices (like Vivo, Oppo). Bypassing to direct SipEngine for better reliability.
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+            android.util.Log.i("TelecomHelper", "Android version < Pie detected, bypassing TelecomManager for outgoing call")
+            return false
+        }
+
         val telecomManager = context.getSystemService(Context.TELECOM_SERVICE) as TelecomManager
         val handle = getPhoneAccountHandle(context)
         
