@@ -29,6 +29,13 @@ jobs:
         run: |
           echo "${KEYSTORE_BASE64}" | base64 -d - > ipdial.jks
 
+      - name: Decode google-services.json from secrets
+        env:
+          GOOGLE_SERVICES_BASE64: ${{ secrets.GOOGLE_SERVICES_BASE64 }}
+        run: |
+          mkdir -p app
+          echo "${GOOGLE_SERVICES_BASE64}" | base64 -d - > app/google-services.json
+
       - name: Create keystore.properties from secrets
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
