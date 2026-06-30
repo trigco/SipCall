@@ -43,7 +43,17 @@ android {
 
     signingConfigs {
         release {
-            if (keystoreProperties.containsKey('STORE_FILE')) {
+            // CI: use env vars from GitHub Secrets; local: fall back to keystore.properties
+            def storeFileEnv = System.getenv("STORE_FILE")
+            def storePasswordEnv = System.getenv("STORE_PASSWORD")
+            def keyAliasEnv = System.getenv("KEY_ALIAS")
+            def keyPasswordEnv = System.getenv("KEY_PASSWORD")
+            if (storeFileEnv != null) {
+                storeFile file(storeFileEnv)
+                storePassword storePasswordEnv
+                keyAlias keyAliasEnv
+                keyPassword keyPasswordEnv
+            } else if (keystoreProperties.containsKey('STORE_FILE')) {
                 storeFile file(keystoreProperties['STORE_FILE'])
                 storePassword keystoreProperties['STORE_PASSWORD']
                 keyAlias keystoreProperties['KEY_ALIAS']
