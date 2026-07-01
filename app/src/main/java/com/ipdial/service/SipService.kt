@@ -1,29 +1,44 @@
 package com.ipdial.service
 
-import android.app.*
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.media.Ringtone
 import android.media.RingtoneManager
-import android.os.*
-import android.util.Log
+import android.net.ConnectivityManager
+import android.net.Network
+import android.os.Build
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import com.ipdial.MainActivity
 import com.ipdial.R
-import com.ipdial.data.model.*
+import com.ipdial.data.model.AudioDeviceMode
+import com.ipdial.data.model.CallDirection
+import com.ipdial.data.model.CallState
+import com.ipdial.data.model.RegStatus
 import com.ipdial.data.repository.AccountRepository
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class SipService : Service() {
 

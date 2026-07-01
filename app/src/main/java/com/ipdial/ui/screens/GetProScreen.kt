@@ -108,7 +108,9 @@ fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
                 Button(onClick = {
                     if (code.isNotBlank()) {
                         vm.claimReferral(code) { success, msg ->
-                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            try {
+                                android.widget.Toast.makeText(context.applicationContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            } catch (_: Exception) {}
                         }
                     }
                 }, modifier = Modifier.weight(1f)) {

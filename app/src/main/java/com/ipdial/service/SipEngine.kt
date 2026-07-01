@@ -86,57 +86,77 @@ object SipEngine {
         }
     }
 
+    @Synchronized
     fun init(context: Context) {
         if (endpoint != null) return
         try {
             System.loadLibrary("pjsua2")
+
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var initError: Throwable? = null
             
-            val writer = SipLogWriter()
-            this.logWriter = writer
-            
-            endpoint = Endpoint().apply {
-                libCreate()
-                val epCfg = EpConfig().apply {
-                    logConfig.level = 4
-                    logConfig.consoleLevel = 4
-                    logConfig.writer = writer
-                    medConfig.apply {
-                        ecOptions = 0
-                        ecTailLen = 200
-                        noVad = false
-                        clockRate = 48000
-                        quality = 8
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                try {
+                    val ep = Endpoint()
+                    endpoint = ep
+                    ep.libCreate()
+                    
+                    val writer = SipLogWriter()
+                    this.logWriter = writer
+                    
+                    val epCfg = EpConfig().apply {
+                        logConfig.level = 4
+                        logConfig.consoleLevel = 4
+                        logConfig.writer = writer
+                        medConfig.apply {
+                            ecOptions = 0
+                            ecTailLen = 200
+                            noVad = false
+                            clockRate = 48000
+                            quality = 8
+                        }
+                        uaConfig.apply {
+                            userAgent = "IPDial/1.0 (Android)"
+                            maxCalls = 4
+                        }
                     }
-                    uaConfig.apply {
-                        userAgent = "IPDial/1.0 (Android)"
-                        maxCalls = 4
-                        // stunServer.add("stun.l.google.com:19302")
-                    }
+                    ep.libInit(epCfg)
+
+                    val sipTpCfg = TransportConfig()
+                    sipTpCfg.port = 0
+                    try {
+                        udpTransportId = ep.transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
+                    } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
+                    
+                    val tcpTpCfg = TransportConfig()
+                    tcpTpCfg.port = 0
+                    try {
+                        tcpTransportId = ep.transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
+                    } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
+                    
+                    val tlsTpCfg = TransportConfig()
+                    tlsTpCfg.tlsConfig.verifyServer = true
+                    tlsTpCfg.tlsConfig.verifyClient = false
+                    try {
+                        tlsTransportId = ep.transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
+                    } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
+
+                    ep.libStart()
+                    log("PJSIP started successfully on Main thread")
+                } catch (t: Throwable) {
+                    initError = t
+                } finally {
+                    latch.countDown()
                 }
-                libInit(epCfg)
-
-                val sipTpCfg = TransportConfig()
-                sipTpCfg.port = 0
-                try {
-                    udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
-                } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
-                
-                val tcpTpCfg = TransportConfig()
-                tcpTpCfg.port = 0
-                try {
-                    tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
-                } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
-                
-                val tlsTpCfg = TransportConfig()
-                tlsTpCfg.tlsConfig.verifyServer = true
-                tlsTpCfg.tlsConfig.verifyClient = false // Client cert verify usually not needed for mobile apps
-                try {
-                    tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
-                } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
-
-                libStart()
-                log("PJSIP started successfully")
             }
+            
+            latch.await()
+            initError?.let { throw it }
+            
+            // The Main thread is now registered by PJSIP. 
+            // We can now register the current (calling) thread if needed.
+            registerCurrentThread()
+
         } catch (e: Throwable) {
             log("PJSIP init failed: ${e.message}", true)
         }
@@ -457,10 +477,23 @@ object SipEngine {
     private fun configureCodecs(preferred: PreferredCodec, ecEnabled: Boolean, nsEnabled: Boolean, agcEnabled: Boolean) {
         val ep = endpoint ?: return
         try {
-            val codecs = ep.codecEnum2()
-            for (i in 0 until codecs.size) {
-                val codec = codecs.get(i)
-                val codecId = codec.codecId
+            // Disable all audio codecs first
+            val audioCodecs = ep.codecEnum2()
+            for (i in 0 until audioCodecs.size) {
+                ep.codecSetPriority(audioCodecs.get(i).codecId, 0.toShort())
+            }
+            
+            // Disable all video codecs if supported
+            try {
+                val videoCodecs = ep.videoCodecEnum2()
+                for (i in 0 until videoCodecs.size) {
+                    ep.codecSetPriority(videoCodecs.get(i).codecId, 0.toShort())
+                }
+            } catch (e: Throwable) {}
+
+            // Enable only the preferred codec and G.711 fallbacks
+            for (i in 0 until audioCodecs.size) {
+                val codecId = audioCodecs.get(i).codecId
                 val name = codecId.lowercase()
                 
                 val isPreferred = when (preferred) {
@@ -471,21 +504,12 @@ object SipEngine {
                     PreferredCodec.G711A -> name.contains("pcma")
                 }
 
-                // Always enable these "good" codecs at a baseline priority (150).
-                // This allows PJSIP to automatically choose a compatible one if the preferred fails.
-                val isGoodCodec = name.contains("g729") || 
-                                 name.contains("opus") || 
-                                 (name.contains("g722") && !name.contains("g7221")) || 
-                                 name.contains("pcma") || 
-                                 name.contains("pcmu")
-                
-                if (isGoodCodec) {
-                    val priority = if (isPreferred) 250 else 150
-                    ep.codecSetPriority(codecId, priority.toShort())
-                } else {
-                    ep.codecSetPriority(codecId, 0.toShort())
+                if (isPreferred) {
+                    ep.codecSetPriority(codecId, 250.toShort())
+                } else if (name.contains("pcmu") || name.contains("pcma")) {
+                    // PCMU/PCMA are standard fallbacks, but give them low priority
+                    ep.codecSetPriority(codecId, 10.toShort())
                 }
-
             }
         } catch (e: Throwable) {
             log("Error configuring codecs: ${e.message}", true)

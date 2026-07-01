@@ -20,18 +20,16 @@ object AppIconHelper {
         val packageName = context.packageName
         
         val targetAlias = ALIASES[aliasName] ?: DEFAULT_ALIAS
+        android.util.Log.d("AppIconHelper", "Setting icon to: $aliasName ($targetAlias)")
 
-        // We only want to enable/disable the LAUNCHER aliases.
-        // The core MainActivity must ALWAYS be enabled.
-        
-        // 1. Enable the target alias
+        // 1. First, ensure the target alias is enabled
         pm.setComponentEnabledSetting(
             ComponentName(packageName, targetAlias),
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP
         )
 
-        // 2. Disable all other launcher aliases
+        // 2. Disable all other aliases
         ALIASES.values.forEach { alias ->
             if (alias != targetAlias) {
                 pm.setComponentEnabledSetting(
@@ -42,11 +40,36 @@ object AppIconHelper {
             }
         }
 
-        // 3. Ensure target activity itself is enabled (it doesn't have LAUNCHER category)
+        // 3. FORCE ensure MainActivity is ENABLED. 
+        // This is the stable entry point for Android Studio.
         pm.setComponentEnabledSetting(
             ComponentName(packageName, MAIN_ACTIVITY),
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
             PackageManager.DONT_KILL_APP
         )
+    }
+
+    /**
+     * Emergency recovery to ensure the app is launchable by the IDE.
+     */
+    fun forceEnableMainActivity(context: Context) {
+        try {
+            val pm = context.packageManager
+            val packageName = context.packageName
+            val mainComp = ComponentName(packageName, MAIN_ACTIVITY)
+            
+            // Log the current state for debugging
+            val state = pm.getComponentEnabledSetting(mainComp)
+            android.util.Log.d("AppIconHelper", "MainActivity state was: $state")
+
+            pm.setComponentEnabledSetting(
+                mainComp,
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                PackageManager.DONT_KILL_APP
+            )
+            android.util.Log.d("AppIconHelper", "Forced MainActivity to ENABLED")
+        } catch (e: Exception) {
+            android.util.Log.e("AppIconHelper", "Emergency recovery failed", e)
+        }
     }
 }
