@@ -386,7 +386,13 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         observeCallSession()
-        val connectivityManager = app.getSystemService(Application.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val connectivityManager = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        
+        // Initial check for internet connectivity
+        val activeNet = connectivityManager.activeNetwork
+        val caps = connectivityManager.getNetworkCapabilities(activeNet)
+        _isConnected.value = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+
         val networkRequest = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
@@ -397,7 +403,16 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             }
 
             override fun onLost(network: Network) {
-                _isConnected.value = false
+                // Instead of assuming everything is lost, check if ANY network still has internet
+                val currentActive = connectivityManager.activeNetwork
+                val currentCaps = connectivityManager.getNetworkCapabilities(currentActive)
+                _isConnected.value = currentCaps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            }
+            
+            override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
+                if (networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                    _isConnected.value = true
+                }
             }
         })
 

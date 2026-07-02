@@ -102,7 +102,8 @@ fun HomeScreen(
             dayEntries.forEach { entry ->
                 val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
                 val contactId = if (cleanNumber.length >= 10) {
-                    contactLookupMap[cleanNumber.takeLast(10)]?.id ?: cleanNumber
+                    val last10 = cleanNumber.takeLast(10)
+                    contactLookupMap[last10]?.id ?: last10
                 } else {
                     cleanNumber
                 }

@@ -36,7 +36,7 @@ object SipEngine {
     private val accountConfigs = mutableMapOf<String, SipAccount>() // accountId -> SipAccount configuration
     private val callMap = mutableMapOf<Int, PjCall>()             // callId -> PjCall
     private val registeredThreads = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
-    
+
     private var udpTransportId: Int = -1
     private var tcpTransportId: Int = -1
     private var tlsTransportId: Int = -1
@@ -56,7 +56,7 @@ object SipEngine {
 
     private var recorder: AudioMediaRecorder? = null
     private var logWriter: SipLogWriter? = null
-    
+
     // Volume Boost Factor (250%)
     private const val VOLUME_BOOST_FACTOR = 2.5f
 
@@ -96,31 +96,32 @@ object SipEngine {
         if (endpoint != null) return
         try {
             System.loadLibrary("pjsua2")
-            
+
             audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            
+
             val writer = SipLogWriter()
             this.logWriter = writer
-            
+
             endpoint = Endpoint().apply {
                 libCreate()
                 val epCfg = EpConfig().apply {
                     logConfig.level = 4
                     logConfig.consoleLevel = 4
                     logConfig.writer = writer
-                    
-                    // CRITICAL FIX FOR CLIPPING & SMOOTHNESS
+
                     medConfig.apply {
-                        ecOptions = 0         // FIXED: Disabled Software AEC to stop it from cutting words due to volume boost
-                        ecTailLen = 0         // FIXED: Removed software echo tail
-                        noVad = true          // VAD disabled to prevent random mic drops
-                        clockRate = 16000     // FIXED: 16000 is an exact multiple of G.729 (8000Hz). Restores 100% smoothness
-                        sndClockRate = 16000  // Match software clock to let Android OS handle the final hardware resampling
-                        quality = 5           // High Quality Resampler
+                        ecOptions = 0
+                        ecTailLen = 200
+                        noVad = false
+                        clockRate = 48000 // Reverting to 48kHz which is more standard for Android hardware
+                        sndClockRate = 48000
+                        quality = 8
                     }
                     uaConfig.apply {
                         userAgent = "IPDial/1.0 (Android)"
                         maxCalls = 4
+                        // Add STUN for NAT traversal (helps when user can't hear or connection hangs)
+                        stunServer.add("stun.l.google.com:19302")
                     }
                 }
                 libInit(epCfg)
@@ -130,13 +131,13 @@ object SipEngine {
                 try {
                     udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
                 } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
-                
+
                 val tcpTpCfg = TransportConfig()
                 tcpTpCfg.port = 0
                 try {
                     tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
                 } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
-                
+
                 val tlsTpCfg = TransportConfig()
                 tlsTpCfg.tlsConfig.verifyServer = true
                 tlsTpCfg.tlsConfig.verifyClient = false
@@ -179,8 +180,7 @@ object SipEngine {
 
             val acfg = AccountConfig().apply {
                 idUri = "sip:${account.username}@${account.domain}"
-                
-                // If port is null or 0, let PJSIP handle it by not appending it
+
                 regConfig.registrarUri = if (account.port != null && account.port > 0) {
                     "sip:${account.domain}:${account.port}"
                 } else {
@@ -203,14 +203,12 @@ object SipEngine {
                 }
 
                 mediaConfig.apply {
-                    // Use OPTIONAL instead of MANDATORY for broader compatibility
                     srtpUse = if (account.transport == Transport.TLS)
                         pjmedia_srtp_use.PJMEDIA_SRTP_OPTIONAL
                     else
                         pjmedia_srtp_use.PJMEDIA_SRTP_DISABLED
                 }
 
-                // ICE can cause delays if not configured perfectly, disabling for now
                 natConfig.iceEnabled = false
                 natConfig.turnEnabled = false
                 natConfig.sipStunUse = pjsua_stun_use.PJSUA_STUN_USE_DEFAULT
@@ -253,10 +251,6 @@ object SipEngine {
         }
     }
 
-    /**
-     * Force-reconnect all accounts by removing and re-adding them.
-     * Use after network changes where underlying transports may be broken.
-     */
     fun forceReconnectAll() {
         registerCurrentThread()
         try {
@@ -300,16 +294,14 @@ object SipEngine {
         registerCurrentThread()
         return try {
             val pjAcc = accountMap[accountId] ?: run {
-                log("makeCall failed: accountId $accountId not found in accountMap. Current accounts: ${accountMap.keys}", true)
+                log("makeCall failed: accountId $accountId not found in accountMap.", true)
                 return false
             }
             val destUri = if (destination.startsWith("sip:")) destination else "sip:$destination"
-            
+
             log("making call to $destUri")
             val call = PjCall(pjAcc)
-            
-            // Set call session to CALLING before placing the call.
-            // Using -1 temporarily; it gets updated either in the try block below or in onCallState.
+
             _callSession.value = CallSession(
                 callId = -1,
                 accountId = accountId,
@@ -317,19 +309,18 @@ object SipEngine {
                 direction = CallDirection.OUTGOING,
                 state = CallState.CALLING
             )
-            
+
             val prm = CallOpParam(true).apply {
                 opt.audioCount = 1
                 opt.videoCount = 0
             }
-            
+
             try {
                 call.makeCall(destUri, prm)
                 val realId = call.getId()
                 callMap[realId] = call
                 log("call.makeCall returned successfully. assigned call ID = $realId")
-                
-                // Only update if call session was not cleared/disconnected in the meantime
+
                 _callSession.value?.let { currentSession ->
                     if (currentSession.state != CallState.DISCONNECTED) {
                         _callSession.value = currentSession.copy(callId = realId)
@@ -354,7 +345,7 @@ object SipEngine {
             try {
                 val prm = CallOpParam(true).apply { statusCode = pjsip_status_code.PJSIP_SC_OK }
                 call.answer(prm)
-            } catch (e: Throwable) { 
+            } catch (e: Throwable) {
                 log("answerCall failed: ${e.message}", true)
             }
         }
@@ -363,15 +354,17 @@ object SipEngine {
     fun hangupCall(callId: Int = -1) {
         registerCurrentThread()
         val id = if (callId >= 0) callId else _callSession.value?.callId ?: return
+        log("Hangup requested for callId=$id")
         val call = callMap[id]
         if (call != null) {
             try {
                 val prm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_DECLINE }
                 call.hangup(prm)
-            } catch (e: Throwable) { 
+            } catch (e: Throwable) {
                 log("hangupCall failed: ${e.message}", true)
             }
         } else {
+            log("Hangup failed: callId=$id not found in map")
             _callSession.value = null
         }
     }
@@ -390,7 +383,7 @@ object SipEngine {
                         }
                     }
                     _callSession.value = session.copy(isMuted = muted)
-                } catch (e: Throwable) { 
+                } catch (e: Throwable) {
                     log("setMute failed: ${e.message}", true)
                 }
             }
@@ -408,13 +401,13 @@ object SipEngine {
             recorder?.delete()
             recorder = AudioMediaRecorder()
             recorder?.createRecorder(filePath)
-            
+
             _callSession.value?.let { session ->
                 callMap[session.callId]?.let { call ->
                     val ci = call.info
                     for (i in 0 until ci.media.size) {
                         val mi = ci.media.get(i)
-                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO && 
+                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
                             mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
                             val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index.toLong()))
                             aud.startTransmit(recorder)
@@ -432,13 +425,12 @@ object SipEngine {
     fun stopRecording() {
         registerCurrentThread()
         try {
-            // CRITICAL: Ensure recorder is stopped before deletion
             recorder?.let {
-                it.delete() // AudioMediaRecorder.delete() usually handles stopping in pjsua2
+                it.delete()
             }
             recorder = null
             _callSession.value = _callSession.value?.copy(isRecording = false)
-        } catch (e: Throwable) { 
+        } catch (e: Throwable) {
             log("stopRecording failed: ${e.message}", true)
         }
     }
@@ -447,7 +439,7 @@ object SipEngine {
         registerCurrentThread()
         _callSession.value?.let { session ->
             callMap[session.callId]?.let { call ->
-                try { call.dialDtmf(digit.toString()) } catch (e: Throwable) { 
+                try { call.dialDtmf(digit.toString()) } catch (e: Throwable) {
                     log("sendDtmf failed: ${e.message}", true)
                 }
             }
@@ -462,7 +454,7 @@ object SipEngine {
                     val prm = CallOpParam()
                     if (onHold) call.setHold(prm) else call.reinvite(prm)
                     _callSession.value = session.copy(isOnHold = onHold)
-                } catch (e: Throwable) { 
+                } catch (e: Throwable) {
                     log("holdCall failed: ${e.message}", true)
                 }
             }
@@ -473,7 +465,6 @@ object SipEngine {
         val ep = endpoint ?: return
         try {
             val codecs = ep.codecEnum2()
-            
             val targetCodecKeyword = when (preferred) {
                 PreferredCodec.G729  -> "g729"
                 PreferredCodec.OPUS  -> "opus"
@@ -482,27 +473,28 @@ object SipEngine {
                 PreferredCodec.G711A -> "pcma"
             }
 
-            log("Configuring codecs. Preferred target keyword: $targetCodecKeyword")
+            log("Configuring codecs. Target: $targetCodecKeyword")
 
+            // STRICT WHITELIST to keep INVITE packet small (< 1500 bytes)
+            // Enabling many codecs adds many lines to SDP, which causes routers to drop UDP packets.
             for (i in 0 until codecs.size) {
                 val codec = codecs.get(i)
                 val codecId = codec.codecId
                 val name = codecId.lowercase()
 
-                if (name.contains(targetCodecKeyword)) {
-                    ep.codecSetPriority(codecId, 250.toShort())
-                    log("Setting top priority (250) to: $codecId")
-                } else if (name.contains("opus") || name.contains("g722") || name.contains("pcma") || name.contains("pcmu") || name.contains("g729")) {
-                    val backupPriority = when {
-                        name.contains("opus") -> 180
-                        name.contains("g722") && !name.contains("g7221") -> 160
-                        name.contains("pcma") || name.contains("pcmu") -> 120
-                        else -> 100
-                    }
-                    ep.codecSetPriority(codecId, backupPriority.toShort())
-                } else {
-                    ep.codecSetPriority(codecId, 0.toShort())
+                // v1.0.6 approach: Only enable essential codecs. Disable everything else.
+                val isG7221 = name.contains("g7221") // Avoid G722.1 (bulky)
+                
+                val priority: Short = when {
+                    name.contains(targetCodecKeyword) && !isG7221 -> 250
+                    name.contains("pcma") || name.contains("pcmu") -> 150
+                    name.contains("g729") -> 100
+                    name.contains("opus") -> 80
+                    else -> 0
                 }
+                
+                ep.codecSetPriority(codecId, priority)
+                if (priority > 0) log("Codec ENABLED: $codecId (priority $priority)")
             }
         } catch (e: Throwable) {
             log("Error configuring codecs: ${e.message}", true)
@@ -516,22 +508,22 @@ object SipEngine {
             callMap.clear()
             accountMap.values.forEach { it.delete() }
             accountMap.clear()
-            
+
             recorder?.delete()
             recorder = null
-            
+
             endpoint?.libDestroy()
             endpoint?.delete()
             endpoint = null
-            
+
             logWriter?.delete()
             logWriter = null
-            
+
             registeredThreads.clear()
-            
+
             audioManager.mode = AudioManager.MODE_NORMAL
             audioManager.isSpeakerphoneOn = false
-        } catch (e: Throwable) { 
+        } catch (e: Throwable) {
             log("destroy failed: ${e.message}", true)
         }
     }
@@ -539,7 +531,6 @@ object SipEngine {
     class PjAccount(private val accountId: String) : Account() {
         override fun onRegState(prm: OnRegStateParam) {
             try {
-                // Protect against null reference when object is being destroyed
                 val ai = try { info } catch (e: Throwable) {
                     log("Account $accountId info retrieval failed during onRegState: ${e.message}", true)
                     return
@@ -566,7 +557,7 @@ object SipEngine {
             try {
                 val call = PjCall(this, prm.callId)
                 callMap[prm.callId] = call
-                
+
                 val opPrm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_RINGING }
                 try {
                     call.answer(opPrm)
@@ -633,24 +624,23 @@ object SipEngine {
                     pjsip_inv_state.PJSIP_INV_STATE_DISCONNECTED -> CallState.DISCONNECTED
                     else -> CallState.IDLE
                 }
-                
+
                 if (newState == CallState.DISCONNECTED) {
                     log("Call $currentCallId DISCONNECTED (code=${ci.lastStatusCode}, reason=${ci.lastReason})")
-                    
+
                     audioManager.mode = AudioManager.MODE_NORMAL
                     audioManager.isSpeakerphoneOn = false
 
                     callMap.remove(currentCallId)
                     _callSession.value = null
-                    
-                    // CRITICAL: Ensure recorder is finalized so the WAV header is correctly written!
+
                     try {
                         recorder?.delete()
                         recorder = null
                     } catch (e: Throwable) {
                         log("Failed to delete recorder on disconnect: ${e.message}", true)
                     }
-                    
+
                     SipConnectionService.getConnection(currentCallId)?.let { conn ->
                         try {
                             conn.setDisconnected(android.telecom.DisconnectCause(android.telecom.DisconnectCause.REMOTE))
@@ -660,7 +650,7 @@ object SipEngine {
                             log("Failed to disconnect telecom connection: ${e.message}", true)
                         }
                     }
-                    
+
                     val callToDelete = this
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
                         try {
@@ -671,7 +661,7 @@ object SipEngine {
                     }
                 } else {
                     _callSession.value = _callSession.value?.copy(state = newState, callId = currentCallId)
-                    
+
                     SipConnectionService.getConnection(currentCallId)?.let { conn ->
                         try {
                             when (newState) {
@@ -687,7 +677,7 @@ object SipEngine {
                         }
                     }
                 }
-            } catch (e: Throwable) { 
+            } catch (e: Throwable) {
                 log("PjCall.onCallState failed: ${e.message}", true)
             }
         }
@@ -713,7 +703,7 @@ object SipEngine {
                         if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
                             mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
                             val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
-                            
+
                             aud.adjustRxLevel(VOLUME_BOOST_FACTOR)
                             aud.adjustTxLevel(VOLUME_BOOST_FACTOR)
 

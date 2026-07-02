@@ -29,6 +29,7 @@ import com.ipdial.data.model.AudioDeviceMode
 import com.ipdial.data.model.CallDirection
 import com.ipdial.data.model.CallState
 import com.ipdial.data.model.RegStatus
+import com.ipdial.data.model.PreferredCodec
 import com.ipdial.data.repository.AccountRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -202,10 +203,22 @@ class SipService : Service() {
                 }
             }
 
-            // 3. Register accounts flow
+            // 3. Migration: Ensure default codec is G711A for AmarIP compatibility (what worked in v1.0.6)
+            try {
+                val accountsList = repo.accounts.first()
+                accountsList.forEach { acc ->
+                    if (acc.codec != PreferredCodec.G711A) {
+                        repo.saveAccount(acc.copy(codec = PreferredCodec.G711A))
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SipService", "Migration to G711A failed", e)
+            }
+
+            // 4. Register accounts flow
             registerAccountsFromDataStore()
 
-            // 4. Register default network callback
+            // 5. Register default network callback
             registerDefaultNetworkCallback()
         }
 
@@ -362,7 +375,9 @@ class SipService : Service() {
                             
                             Log.d("SipService", "Dialing URI: $finalUri")
                             
-                            SipEngine.makeCall(acc.id, finalUri)
+                            withContext(Dispatchers.Main) {
+                                SipEngine.makeCall(acc.id, finalUri)
+                            }
                         } else {
                             Log.e("SipService", "Test call failed: No enabled account")
                         }
@@ -570,7 +585,7 @@ class SipService : Service() {
                 }
                 Log.d("SipService", "Started FGS with type phoneCall")
             } catch (e: Exception) {
-                // Fallback to dataSync if phoneCall is not allowed (common on BOOT_COMPLETED for Android 14+)
+                // Fallback to dataSync if phoneCall is not allowed (common on BOOT_COMPLETED for Android 14+)\
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     try {
                         androidx.core.app.ServiceCompat.startForeground(
