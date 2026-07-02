@@ -1,6 +1,7 @@
 package com.ipdial.service
 
 import android.content.Context
+import android.media.AudioManager
 import android.os.Build
 import android.util.Log
 import com.ipdial.data.model.*
@@ -40,6 +41,8 @@ object SipEngine {
     private var tcpTransportId: Int = -1
     private var tlsTransportId: Int = -1
 
+    private lateinit var audioManager: AudioManager
+
     private val _callSession = MutableStateFlow<CallSession?>(null)
     val callSession: StateFlow<CallSession?> = _callSession.asStateFlow()
 
@@ -53,6 +56,9 @@ object SipEngine {
 
     private var recorder: AudioMediaRecorder? = null
     private var logWriter: SipLogWriter? = null
+    
+    // Volume Boost Factor (250%)
+    private const val VOLUME_BOOST_FACTOR = 2.5f
 
     private fun log(message: String, isError: Boolean = false) {
         if (isError) {
@@ -86,77 +92,61 @@ object SipEngine {
         }
     }
 
-    @Synchronized
     fun init(context: Context) {
         if (endpoint != null) return
         try {
             System.loadLibrary("pjsua2")
-
-            val latch = java.util.concurrent.CountDownLatch(1)
-            var initError: Throwable? = null
             
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                try {
-                    val ep = Endpoint()
-                    endpoint = ep
-                    ep.libCreate()
+            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            
+            val writer = SipLogWriter()
+            this.logWriter = writer
+            
+            endpoint = Endpoint().apply {
+                libCreate()
+                val epCfg = EpConfig().apply {
+                    logConfig.level = 4
+                    logConfig.consoleLevel = 4
+                    logConfig.writer = writer
                     
-                    val writer = SipLogWriter()
-                    this.logWriter = writer
-                    
-                    val epCfg = EpConfig().apply {
-                        logConfig.level = 4
-                        logConfig.consoleLevel = 4
-                        logConfig.writer = writer
-                        medConfig.apply {
-                            ecOptions = 0
-                            ecTailLen = 200
-                            noVad = false
-                            clockRate = 48000
-                            quality = 8
-                        }
-                        uaConfig.apply {
-                            userAgent = "IPDial/1.0 (Android)"
-                            maxCalls = 4
-                        }
+                    // CRITICAL FIX FOR CLIPPING & SMOOTHNESS
+                    medConfig.apply {
+                        ecOptions = 0         // FIXED: Disabled Software AEC to stop it from cutting words due to volume boost
+                        ecTailLen = 0         // FIXED: Removed software echo tail
+                        noVad = true          // VAD disabled to prevent random mic drops
+                        clockRate = 16000     // FIXED: 16000 is an exact multiple of G.729 (8000Hz). Restores 100% smoothness
+                        sndClockRate = 16000  // Match software clock to let Android OS handle the final hardware resampling
+                        quality = 5           // High Quality Resampler
                     }
-                    ep.libInit(epCfg)
-
-                    val sipTpCfg = TransportConfig()
-                    sipTpCfg.port = 0
-                    try {
-                        udpTransportId = ep.transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
-                    } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
-                    
-                    val tcpTpCfg = TransportConfig()
-                    tcpTpCfg.port = 0
-                    try {
-                        tcpTransportId = ep.transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
-                    } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
-                    
-                    val tlsTpCfg = TransportConfig()
-                    tlsTpCfg.tlsConfig.verifyServer = true
-                    tlsTpCfg.tlsConfig.verifyClient = false
-                    try {
-                        tlsTransportId = ep.transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
-                    } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
-
-                    ep.libStart()
-                    log("PJSIP started successfully on Main thread")
-                } catch (t: Throwable) {
-                    initError = t
-                } finally {
-                    latch.countDown()
+                    uaConfig.apply {
+                        userAgent = "IPDial/1.0 (Android)"
+                        maxCalls = 4
+                    }
                 }
-            }
-            
-            latch.await()
-            initError?.let { throw it }
-            
-            // The Main thread is now registered by PJSIP. 
-            // We can now register the current (calling) thread if needed.
-            registerCurrentThread()
+                libInit(epCfg)
 
+                val sipTpCfg = TransportConfig()
+                sipTpCfg.port = 0
+                try {
+                    udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
+                } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
+                
+                val tcpTpCfg = TransportConfig()
+                tcpTpCfg.port = 0
+                try {
+                    tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
+                } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
+                
+                val tlsTpCfg = TransportConfig()
+                tlsTpCfg.tlsConfig.verifyServer = true
+                tlsTpCfg.tlsConfig.verifyClient = false
+                try {
+                    tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
+                } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
+
+                libStart()
+                log("PJSIP started successfully")
+            }
         } catch (e: Throwable) {
             log("PJSIP init failed: ${e.message}", true)
         }
@@ -302,6 +292,10 @@ object SipEngine {
         }
     }
 
+    fun updateCallSessionName(name: String) {
+        _callSession.value = _callSession.value?.copy(remoteDisplayName = name)
+    }
+
     fun makeCall(accountId: String, destination: String): Boolean {
         registerCurrentThread()
         return try {
@@ -392,7 +386,7 @@ object SipEngine {
                         val mi = ci.media.get(0)
                         if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO) {
                             val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index))
-                            if (muted) aud.adjustTxLevel(0f) else aud.adjustTxLevel(1f)
+                            if (muted) aud.adjustTxLevel(0f) else aud.adjustTxLevel(VOLUME_BOOST_FACTOR)
                         }
                     }
                     _callSession.value = session.copy(isMuted = muted)
@@ -405,6 +399,7 @@ object SipEngine {
 
     fun setSpeaker(enabled: Boolean) {
         _callSession.value = _callSession.value?.copy(isSpeaker = enabled)
+        audioManager.isSpeakerphoneOn = enabled
     }
 
     fun startRecording(filePath: String) {
@@ -477,38 +472,36 @@ object SipEngine {
     private fun configureCodecs(preferred: PreferredCodec, ecEnabled: Boolean, nsEnabled: Boolean, agcEnabled: Boolean) {
         val ep = endpoint ?: return
         try {
-            // Disable all audio codecs first
-            val audioCodecs = ep.codecEnum2()
-            for (i in 0 until audioCodecs.size) {
-                ep.codecSetPriority(audioCodecs.get(i).codecId, 0.toShort())
-            }
+            val codecs = ep.codecEnum2()
             
-            // Disable all video codecs if supported
-            try {
-                val videoCodecs = ep.videoCodecEnum2()
-                for (i in 0 until videoCodecs.size) {
-                    ep.codecSetPriority(videoCodecs.get(i).codecId, 0.toShort())
-                }
-            } catch (e: Throwable) {}
+            val targetCodecKeyword = when (preferred) {
+                PreferredCodec.G729  -> "g729"
+                PreferredCodec.OPUS  -> "opus"
+                PreferredCodec.G722  -> "g722"
+                PreferredCodec.G711U -> "pcmu"
+                PreferredCodec.G711A -> "pcma"
+            }
 
-            // Enable only the preferred codec and G.711 fallbacks
-            for (i in 0 until audioCodecs.size) {
-                val codecId = audioCodecs.get(i).codecId
+            log("Configuring codecs. Preferred target keyword: $targetCodecKeyword")
+
+            for (i in 0 until codecs.size) {
+                val codec = codecs.get(i)
+                val codecId = codec.codecId
                 val name = codecId.lowercase()
-                
-                val isPreferred = when (preferred) {
-                    PreferredCodec.G729 -> name.contains("g729")
-                    PreferredCodec.OPUS -> name.contains("opus")
-                    PreferredCodec.G722 -> name.contains("g722") && !name.contains("g7221")
-                    PreferredCodec.G711U -> name.contains("pcmu")
-                    PreferredCodec.G711A -> name.contains("pcma")
-                }
 
-                if (isPreferred) {
+                if (name.contains(targetCodecKeyword)) {
                     ep.codecSetPriority(codecId, 250.toShort())
-                } else if (name.contains("pcmu") || name.contains("pcma")) {
-                    // PCMU/PCMA are standard fallbacks, but give them low priority
-                    ep.codecSetPriority(codecId, 10.toShort())
+                    log("Setting top priority (250) to: $codecId")
+                } else if (name.contains("opus") || name.contains("g722") || name.contains("pcma") || name.contains("pcmu") || name.contains("g729")) {
+                    val backupPriority = when {
+                        name.contains("opus") -> 180
+                        name.contains("g722") && !name.contains("g7221") -> 160
+                        name.contains("pcma") || name.contains("pcmu") -> 120
+                        else -> 100
+                    }
+                    ep.codecSetPriority(codecId, backupPriority.toShort())
+                } else {
+                    ep.codecSetPriority(codecId, 0.toShort())
                 }
             }
         } catch (e: Throwable) {
@@ -535,6 +528,9 @@ object SipEngine {
             logWriter = null
             
             registeredThreads.clear()
+            
+            audioManager.mode = AudioManager.MODE_NORMAL
+            audioManager.isSpeakerphoneOn = false
         } catch (e: Throwable) { 
             log("destroy failed: ${e.message}", true)
         }
@@ -640,6 +636,10 @@ object SipEngine {
                 
                 if (newState == CallState.DISCONNECTED) {
                     log("Call $currentCallId DISCONNECTED (code=${ci.lastStatusCode}, reason=${ci.lastReason})")
+                    
+                    audioManager.mode = AudioManager.MODE_NORMAL
+                    audioManager.isSpeakerphoneOn = false
+
                     callMap.remove(currentCallId)
                     _callSession.value = null
                     
@@ -704,12 +704,19 @@ object SipEngine {
                     return
                 }
 
+                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                audioManager.isSpeakerphoneOn = _callSession.value?.isSpeaker ?: false
+
                 for (i in 0 until ci.media.size) {
                     try {
                         val mi = ci.media.get(i)
                         if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
                             mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
                             val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
+                            
+                            aud.adjustRxLevel(VOLUME_BOOST_FACTOR)
+                            aud.adjustTxLevel(VOLUME_BOOST_FACTOR)
+
                             aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
                             endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
 

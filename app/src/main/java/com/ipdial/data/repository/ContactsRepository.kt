@@ -10,6 +10,7 @@ import com.ipdial.data.local.ContactEntity
 import com.ipdial.data.model.Contact
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
@@ -85,12 +86,12 @@ class ContactsRepository(private val context: Context) {
     }
 
     suspend fun getContacts(query: String? = null): List<Contact> = withContext(Dispatchers.IO) {
-        // This is now just a fallback or for immediate search if needed.
-        // Usually we observe allContacts flow.
-        syncContacts()
-        val contactsMap = mutableMapOf<String, Contact>()
-        // Return from DB
-        emptyList() // Flow is preferred
+        val entities = if (query.isNullOrBlank()) {
+            contactDao.getAllContacts().first()
+        } else {
+            contactDao.searchContacts("%$query%").first()
+        }
+        entities.map { it.toContact() }
     }
 
     suspend fun toggleFavorite(contactId: String, isFavorite: Boolean) = withContext(Dispatchers.IO) {

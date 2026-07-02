@@ -35,6 +35,12 @@ import com.ipdial.ui.AccountSelectionDialog
 import java.text.SimpleDateFormat
 import java.util.*
 
+data class LogGroup(
+    val mainEntry: CallLogEntry,
+    val count: Int,
+    val allEntries: List<CallLogEntry>
+)
+
 @Composable
 fun HomeScreen(
     vm: SipViewModel, 
@@ -78,7 +84,7 @@ fun HomeScreen(
         }
     }
 
-    val grouped = remember(filteredLog) {
+    val grouped = remember(filteredLog, contactLookupMap) {
         filteredLog.groupBy { entry ->
             val cal = Calendar.getInstance().apply { timeInMillis = entry.timestampMs }
             val today = Calendar.getInstance()
@@ -89,7 +95,32 @@ fun HomeScreen(
                 isSameDay(cal, yesterday) -> "Yesterday"
                 else -> SimpleDateFormat("MMMM d, yyyy", Locale.getDefault()).format(Date(entry.timestampMs))
             }
-        }.toList().sortedByDescending { it.second.firstOrNull()?.timestampMs ?: 0L }
+        }.mapValues { (_, dayEntries) ->
+            val groups = mutableListOf<LogGroup>()
+            val contactToGroup = mutableMapOf<String, Int>()
+            
+            dayEntries.forEach { entry ->
+                val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
+                val contactId = if (cleanNumber.length >= 10) {
+                    contactLookupMap[cleanNumber.takeLast(10)]?.id ?: cleanNumber
+                } else {
+                    cleanNumber
+                }
+                
+                val groupIndex = contactToGroup[contactId]
+                if (groupIndex != null) {
+                    val existingGroup = groups[groupIndex]
+                    groups[groupIndex] = existingGroup.copy(
+                        count = existingGroup.count + 1,
+                        allEntries = existingGroup.allEntries + entry
+                    )
+                } else {
+                    contactToGroup[contactId] = groups.size
+                    groups.add(LogGroup(entry, 1, listOf(entry)))
+                }
+            }
+            groups
+        }.toList().sortedByDescending { it.second.firstOrNull()?.mainEntry?.timestampMs ?: 0L }
     }
 
     Scaffold(
@@ -181,7 +212,8 @@ fun HomeScreen(
                                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp)
                             )
                         }
-                        items(entries, key = { it.id }) { entry ->
+                        items(entries, key = { it.mainEntry.id }) { group ->
+                            val entry = group.mainEntry
                             val cleanNumber = cleanUri(entry.remoteUri).filter { it.isDigit() }
                             val contact = remember(cleanNumber, contactLookupMap) {
                                 if (cleanNumber.isEmpty()) null
@@ -194,6 +226,7 @@ fun HomeScreen(
                             val numberToCopy = cleanUri(entry.remoteUri).filter { it.isDigit() || it == '+' }
                              CallLogRow(
                                  entry   = entry,
+                                 count   = group.count,
                                  account = accounts.firstOrNull { it.id == entry.accountId },
                                  contact = contact,
                                  onClick = { activeHistoryEntryForDetail = entry },
@@ -307,6 +340,7 @@ fun SearchBarRow(
 @Composable
 fun CallLogRow(
     entry: CallLogEntry,
+    count: Int = 1,
     account: SipAccount?,
     contact: Contact?,
     onClick: () -> Unit,
@@ -318,6 +352,7 @@ fun CallLogRow(
     var expanded by remember { mutableStateOf(false) }
     val viaLabel  = account?.label?.ifBlank { account.domain } ?: "SIP"
     val callerName = contact?.name ?: cleanDisplayName(entry.remoteDisplayName, entry.remoteUri)
+    val displayNameWithCount = if (count > 1) "$callerName ($count)" else callerName
     val timeStr   = formatTime(entry.timestampMs)
 
     Surface(
@@ -362,7 +397,7 @@ fun CallLogRow(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = callerName,
+                    text = displayNameWithCount,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Medium,
                     color = if (entry.missed)

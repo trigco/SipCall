@@ -50,7 +50,10 @@ object TelecomHelper {
         val cleanNumber = number.removePrefix("sip:")
         val extras = Bundle().apply {
             putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, Uri.fromParts("ipdial", cleanNumber, null))
-            putString(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, name)
+            val incomingExtras = Bundle().apply {
+                putString("com.ipdial.EXTRA_CALLER_NAME", name)
+            }
+            putBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, incomingExtras)
         }
         
         try {

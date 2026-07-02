@@ -16,7 +16,7 @@ object UpdateChecker {
     data class GitHubRelease(
         @SerializedName("tag_name") val tagName: String,
         @SerializedName("html_url") val htmlUrl: String,
-        val body: String
+        @SerializedName("body") val body: String?
     )
 
     suspend fun checkForUpdates(currentVersion: String): GitHubRelease? = withContext(Dispatchers.IO) {

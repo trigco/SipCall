@@ -190,7 +190,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             text = {
                 Column {
                     Text("Version ${release.tagName.trimStart('v')} is available.")
-                    if (release.body.isNotBlank()) {
+                    if (!release.body.isNullOrBlank()) {
                         Spacer(Modifier.height(8.dp))
                         Text(release.body.take(300), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

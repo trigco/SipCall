@@ -190,6 +190,9 @@ class SipService : Service() {
                             
                             val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
                             
+                            // Update session display name for logging and UI consistency
+                            SipEngine.updateCallSessionName(finalDisplayName)
+                            
                             withContext(Dispatchers.Main) {
                                 TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
                                 showIncomingCallNotification(finalDisplayName, session.callId)
@@ -841,9 +844,13 @@ class SipService : Service() {
     }
 
     override fun onDestroy() {
-        scope.cancel()
         releaseWakeLock()
-        SipEngine.destroy()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                SipEngine.destroy()
+            } catch (_: Exception) {}
+        }
+        scope.cancel()
         super.onDestroy()
     }
 

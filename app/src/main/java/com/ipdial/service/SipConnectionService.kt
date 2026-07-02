@@ -2,8 +2,11 @@ package com.ipdial.service
 
 import android.telecom.*
 import android.util.Log
+import kotlinx.coroutines.*
 
 class SipConnectionService : ConnectionService() {
+
+    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     companion object {
         private const val TAG = "SipConnectionService"
@@ -18,6 +21,11 @@ class SipConnectionService : ConnectionService() {
         fun removeConnection(callId: Int) {
             activeConnections.remove(callId)
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        serviceScope.cancel()
     }
 
     override fun onCreateOutgoingConnection(
@@ -43,25 +51,29 @@ class SipConnectionService : ConnectionService() {
         com.ipdial.util.SipLogger.log(TAG, "Attempting outgoing call via ConnectionService: accountId=$accountId, number=$number")
         
         if (accountId != null && number != null) {
-            val success = SipEngine.makeCall(accountId, number)
-            if (success) {
-                val session = SipEngine.callSession.value
-                if (session != null) {
-                    connection.callId = session.callId
-                    registerConnection(session.callId, connection)
-                    connection.setDialing()
-                    com.ipdial.util.SipLogger.log(TAG, "Connection registered successfully with callId=${session.callId}")
-                } else {
-                    Log.e(TAG, "SipEngine.makeCall succeeded but callSession is null (call failed immediately)")
-                    com.ipdial.util.SipLogger.log(TAG, "SipEngine.makeCall succeeded but callSession is null (call failed immediately)")
-                    connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
-                    connection.destroy()
+            serviceScope.launch {
+                val success = SipEngine.makeCall(accountId, number)
+                withContext(Dispatchers.Main) {
+                    if (success) {
+                        val session = SipEngine.callSession.value
+                        if (session != null) {
+                            connection.callId = session.callId
+                            registerConnection(session.callId, connection)
+                            connection.setDialing()
+                            com.ipdial.util.SipLogger.log(TAG, "Connection registered successfully with callId=${session.callId}")
+                        } else {
+                            Log.e(TAG, "SipEngine.makeCall succeeded but callSession is null (call failed immediately)")
+                            com.ipdial.util.SipLogger.log(TAG, "SipEngine.makeCall succeeded but callSession is null (call failed immediately)")
+                            connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
+                            connection.destroy()
+                        }
+                    } else {
+                        Log.e(TAG, "SipEngine.makeCall failed")
+                        com.ipdial.util.SipLogger.log(TAG, "SipEngine.makeCall failed")
+                        connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
+                        connection.destroy()
+                    }
                 }
-            } else {
-                Log.e(TAG, "SipEngine.makeCall failed")
-                com.ipdial.util.SipLogger.log(TAG, "SipEngine.makeCall failed")
-                connection.setDisconnected(DisconnectCause(DisconnectCause.ERROR))
-                connection.destroy()
             }
         } else {
             Log.e(TAG, "Cannot start call: accountId or number is null")
@@ -81,6 +93,13 @@ class SipConnectionService : ConnectionService() {
         com.ipdial.util.SipLogger.log(TAG, "onCreateIncomingConnection called by Telecom framework")
         val connection = SipConnection()
         request?.address?.let { connection.setAddress(it, TelecomManager.PRESENTATION_ALLOWED) }
+        
+        // Set caller display name from extras if available
+        val name = request?.extras?.getBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS)?.getString("com.ipdial.EXTRA_CALLER_NAME")
+        if (name != null) {
+            connection.setCallerDisplayName(name, TelecomManager.PRESENTATION_ALLOWED)
+        }
+
         connection.setInitializing()
         connection.connectionCapabilities = Connection.CAPABILITY_MUTE or Connection.CAPABILITY_SUPPORT_HOLD
         
@@ -98,53 +117,75 @@ class SipConnectionService : ConnectionService() {
 
 class SipConnection : Connection() {
     var callId: Int = -1
+    private val connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     override fun onAnswer() {
         Log.d("SipConnection", "onAnswer(id=$callId)")
         com.ipdial.util.SipLogger.log("SipConnection", "onAnswer called for callId=$callId")
         setActive()
-        SipEngine.answerCall(callId) 
+        connectionScope.launch {
+            SipEngine.answerCall(callId)
+        }
     }
 
     override fun onDisconnect() {
         Log.d("SipConnection", "onDisconnect(id=$callId)")
         com.ipdial.util.SipLogger.log("SipConnection", "onDisconnect called for callId=$callId")
         setDisconnected(DisconnectCause(DisconnectCause.LOCAL))
-        SipEngine.hangupCall(callId)
-        SipConnectionService.removeConnection(callId)
-        destroy()
+        connectionScope.launch {
+            SipEngine.hangupCall(callId)
+            withContext(Dispatchers.Main) {
+                SipConnectionService.removeConnection(callId)
+                destroy()
+                connectionScope.cancel()
+            }
+        }
     }
 
     override fun onAbort() {
         Log.d("SipConnection", "onAbort(id=$callId)")
         com.ipdial.util.SipLogger.log("SipConnection", "onAbort called for callId=$callId")
         setDisconnected(DisconnectCause(DisconnectCause.CANCELED))
-        SipEngine.hangupCall(callId)
-        SipConnectionService.removeConnection(callId)
-        destroy()
+        connectionScope.launch {
+            SipEngine.hangupCall(callId)
+            withContext(Dispatchers.Main) {
+                SipConnectionService.removeConnection(callId)
+                destroy()
+                connectionScope.cancel()
+            }
+        }
     }
 
     override fun onHold() {
         Log.d("SipConnection", "onHold(id=$callId)")
         com.ipdial.util.SipLogger.log("SipConnection", "onHold called for callId=$callId")
         setOnHold()
-        SipEngine.holdCall(true)
+        connectionScope.launch {
+            SipEngine.holdCall(true)
+        }
     }
 
     override fun onUnhold() {
         Log.d("SipConnection", "onUnhold(id=$callId)")
         com.ipdial.util.SipLogger.log("SipConnection", "onUnhold called for callId=$callId")
         setActive()
-        SipEngine.holdCall(false)
+        connectionScope.launch {
+            SipEngine.holdCall(false)
+        }
     }
 
     override fun onReject() {
         Log.d("SipConnection", "onReject(id=$callId)")
         com.ipdial.util.SipLogger.log("SipConnection", "onReject called for callId=$callId")
         setDisconnected(DisconnectCause(DisconnectCause.REJECTED))
-        SipEngine.hangupCall(callId)
-        SipConnectionService.removeConnection(callId)
-        destroy()
+        connectionScope.launch {
+            SipEngine.hangupCall(callId)
+            withContext(Dispatchers.Main) {
+                SipConnectionService.removeConnection(callId)
+                destroy()
+                connectionScope.cancel()
+            }
+        }
     }
 
     @Deprecated("Deprecated in Java", ReplaceWith("onCallAudioStateChanged(state)"))

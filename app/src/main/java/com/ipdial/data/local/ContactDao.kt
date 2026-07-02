@@ -8,6 +8,9 @@ interface ContactDao {
     @Query("SELECT * FROM contacts ORDER BY name ASC")
     fun getAllContacts(): Flow<List<ContactEntity>>
 
+    @Query("SELECT * FROM contacts WHERE name LIKE :query OR numbers LIKE :query ORDER BY name ASC")
+    fun searchContacts(query: String): Flow<List<ContactEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(contacts: List<ContactEntity>)
 

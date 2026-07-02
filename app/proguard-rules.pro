@@ -1,3 +1,7 @@
+# Keep UpdateChecker and its data classes for Gson
+-keep class com.ipdial.util.UpdateChecker** { *; }
+-keep class com.ipdial.util.UpdateChecker$GitHubRelease { *; }
+
 # Keep PJSIP JNI bridge
 -keep class org.pjsip.** { *; }
 -keepclasseswithmembernames class * {
