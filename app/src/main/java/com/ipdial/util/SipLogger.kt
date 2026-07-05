@@ -16,7 +16,6 @@ object SipLogger {
     fun log(tag: String, message: String) {
         val timestamp = timeFormat.format(Date())
         val logLine = "[$timestamp] [$tag] $message"
-        android.util.Log.d(tag, message)
         // Keep last 500 lines of logs
         val current = _logs.value
         _logs.value = if (current.size > 500) {

@@ -11,6 +11,14 @@ import kotlinx.coroutines.launch
 class IPDialApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        
+        // Load PJSIP library on Main thread to ensure proper registration
+        try {
+            System.loadLibrary("pjsua2")
+        } catch (e: Exception) {
+            android.util.Log.e("IPDialApp", "Failed to load pjsua2", e)
+        }
+
         // Initialize Start.io SDK
         StartAppSDK.init(this, "205857982", true)
         // Enable test ads to verify integration
@@ -18,10 +26,6 @@ class IPDialApplication : Application() {
         // Disable splash screen ads if desired
         StartAppAd.disableSplash()
 
-        // Initialize PJSIP engine early on background thread to avoid ANR
-        CoroutineScope(Dispatchers.IO).launch {
-            com.ipdial.service.SipEngine.init(this@IPDialApplication)
-        }
         // Register phone account for Telecom integration
         com.ipdial.service.TelecomHelper.registerPhoneAccount(this)
 

@@ -65,6 +65,12 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     private val _hasBluetoothDevice = MutableStateFlow(false)
     val hasBluetoothDevice: StateFlow<Boolean> = _hasBluetoothDevice.asStateFlow()
 
+    private val _callVolume = MutableStateFlow(2.5f)
+    val callVolume: StateFlow<Float> = _callVolume.asStateFlow()
+
+    private val _showFullIncomingScreen = MutableStateFlow(false)
+    val showFullIncomingScreen: StateFlow<Boolean> = _showFullIncomingScreen.asStateFlow()
+
     val accounts: StateFlow<List<SipAccount>> = repo.accounts
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -698,6 +704,15 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
      fun toggleMute() { SipEngine.setMute(!(callSession.value?.isMuted ?: false)) }
      fun toggleSpeaker() { SipEngine.setSpeaker(!(callSession.value?.isSpeaker ?: false)) }
      fun toggleHold() { SipEngine.holdCall(!(callSession.value?.isOnHold ?: false)) }
+
+     fun setCallVolume(factor: Float) {
+         _callVolume.value = factor
+         SipEngine.setCallVolume(factor)
+     }
+
+     fun setShowFullIncomingScreen(show: Boolean) {
+         _showFullIncomingScreen.value = show
+     }
 
      fun cycleAudioDevice() {
          viewModelScope.launch {

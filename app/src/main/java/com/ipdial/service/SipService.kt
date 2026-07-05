@@ -161,8 +161,10 @@ class SipService : Service() {
         startServiceForeground()
 
         scope.launch {
-            // 1. Initialize PJSIP
-            SipEngine.init(applicationContext)
+            // 1. Initialize PJSIP on Main thread to avoid native crash (pj_thread_this)
+            withContext(Dispatchers.Main) {
+                SipEngine.init(applicationContext)
+            }
             
             Handler(Looper.getMainLooper()).post {
                 SipEngine.onIncomingCall = { session -> 
@@ -430,6 +432,24 @@ class SipService : Service() {
         scope.launch {
             SipEngine.registrationEvents.collect { (accountId, status) ->
                 repo.updateRegStatus(accountId, status)
+            }
+        }
+
+        // Keep-alive loop to ensure registrations stay active for incoming calls
+        scope.launch {
+            while (true) {
+                delay(120_000) // Every 2 minutes
+                try {
+                    val accounts = repo.accounts.first()
+                    accounts.forEach { account ->
+                        if (account.isEnabled && account.regStatus != RegStatus.REGISTERED) {
+                            Log.d("SipService", "Keep-alive: Triggering re-connect for ${account.id}")
+                            SipEngine.reconnectAccount(account.id)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("SipService", "Keep-alive loop error", e)
+                }
             }
         }
     }

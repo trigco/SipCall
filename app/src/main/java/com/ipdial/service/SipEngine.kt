@@ -2,7 +2,6 @@ package com.ipdial.service
 
 import android.content.Context
 import android.media.AudioManager
-import android.os.Build
 import android.util.Log
 import com.ipdial.data.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,20 +17,13 @@ import org.pjsip.pjsua2.*
  * PJSIP engine singleton.
  * Manages the Endpoint lifecycle, account registration, and call sessions.
  */
-class SipLogWriter : LogWriter() {
-    override fun write(entry: LogEntry) {
-        val msg = entry.msg
-        if (!msg.isNullOrBlank()) {
-            com.ipdial.util.SipLogger.log("PJSIP", msg.trim())
-        }
-    }
-}
-
 object SipEngine {
 
     private const val TAG = "SipEngine"
 
+    @Volatile
     private var endpoint: Endpoint? = null
+    private var isLibraryLoaded = false
     private val accountMap = mutableMapOf<String, PjAccount>()   // accountId -> PjAccount
     private val accountConfigs = mutableMapOf<String, SipAccount>() // accountId -> SipAccount configuration
     private val callMap = mutableMapOf<Int, PjCall>()             // callId -> PjCall
@@ -42,6 +34,9 @@ object SipEngine {
     private var tlsTransportId: Int = -1
 
     private lateinit var audioManager: AudioManager
+
+    private val initLock = Any()
+    private var initCallCount = 0
 
     private val _callSession = MutableStateFlow<CallSession?>(null)
     val callSession: StateFlow<CallSession?> = _callSession.asStateFlow()
@@ -55,7 +50,7 @@ object SipEngine {
     var onIncomingCall: ((CallSession) -> Unit)? = null
 
     private var recorder: AudioMediaRecorder? = null
-    private var logWriter: SipLogWriter? = null
+    private var logWriter: LogWriter? = null
 
     // Volume Boost Factor (250%)
     private const val VOLUME_BOOST_FACTOR = 2.5f
@@ -63,21 +58,15 @@ object SipEngine {
     private fun log(message: String, isError: Boolean = false) {
         if (isError) {
             Log.e(TAG, message)
-            com.ipdial.util.SipLogger.log("ERROR", message)
         } else {
             Log.d(TAG, message)
-            com.ipdial.util.SipLogger.log("SipEngine", message)
         }
+        com.ipdial.util.SipLogger.log(TAG, message)
     }
 
     private fun registerCurrentThread() {
         val ep = endpoint ?: return
-        val threadId = if (Build.VERSION.SDK_INT >= 36) {
-            Thread.currentThread().threadId()
-        } else {
-            @Suppress("DEPRECATION")
-            Thread.currentThread().id
-        }
+        val threadId = @Suppress("DEPRECATION") Thread.currentThread().id
         if (registeredThreads.contains(threadId)) {
             return
         }
@@ -93,63 +82,121 @@ object SipEngine {
     }
 
     fun init(context: Context) {
-        if (endpoint != null) return
-        try {
-            System.loadLibrary("pjsua2")
+        initCallCount++
+        val callId = initCallCount
+        @Suppress("DEPRECATION")
+        val threadInfo = "${Thread.currentThread().name}[${Thread.currentThread().id}]"
+        log("init() called (#$callId from $threadInfo)")
 
-            audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        if (endpoint != null) {
+            log("init() skipped (#$callId) — endpoint already set")
+            return
+        }
 
-            val writer = SipLogWriter()
-            this.logWriter = writer
+        synchronized(initLock) {
+            if (endpoint != null) {
+                log("init() skipped in synchronized block (#$callId) — endpoint already set")
+                return
+            }
 
-            endpoint = Endpoint().apply {
-                libCreate()
-                val epCfg = EpConfig().apply {
-                    logConfig.level = 4
-                    logConfig.consoleLevel = 4
-                    logConfig.writer = writer
-
-                    medConfig.apply {
-                        ecOptions = 0
-                        ecTailLen = 200
-                        noVad = false
-                        clockRate = 48000 // Reverting to 48kHz which is more standard for Android hardware
-                        sndClockRate = 48000
-                        quality = 8
-                    }
-                    uaConfig.apply {
-                        userAgent = "IPDial/1.0 (Android)"
-                        maxCalls = 4
-                        // Add STUN for NAT traversal (helps when user can't hear or connection hangs)
-                        stunServer.add("stun.l.google.com:19302")
+            try {
+                if (!isLibraryLoaded) {
+                    try {
+                        System.loadLibrary("pjsua2")
+                        isLibraryLoaded = true
+                        log("#$callId: Native library pjsua2 loaded")
+                    } catch (e: Throwable) {
+                        log("#$callId: Failed to load pjsua2: ${e.message}", true)
                     }
                 }
-                libInit(epCfg)
 
-                val sipTpCfg = TransportConfig()
-                sipTpCfg.port = 0
+                audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+                log("#$callId: Creating PJSIP Endpoint...")
+
+                val ep = try {
+                    Endpoint()
+                } catch (e: Throwable) {
+                    log("#$callId: CRITICAL: Failed to create Endpoint instance: ${e.message}", true)
+                    return
+                }
+
                 try {
-                    udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
-                } catch (e: Exception) { log("Failed to create UDP transport: ${e.message}", true) }
+                    ep.libCreate()
+                    log("#$callId: PJSIP libCreate() successful")
+                } catch (e: Throwable) {
+                    log("#$callId: CRITICAL: PJSIP libCreate() failed: ${e.message}", true)
+                    return
+                }
 
-                val tcpTpCfg = TransportConfig()
-                tcpTpCfg.port = 0
-                try {
-                    tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
-                } catch (e: Exception) { log("Failed to create TCP transport: ${e.message}", true) }
+                // Assign to global ref immediately to prevent GC/R8 from collecting the Endpoint
+                endpoint = ep
 
-                val tlsTpCfg = TransportConfig()
-                tlsTpCfg.tlsConfig.verifyServer = true
-                tlsTpCfg.tlsConfig.verifyClient = false
-                try {
-                    tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
-                } catch (e: Exception) { log("Failed to create TLS transport: ${e.message}", true) }
+                log("#$callId: Thread already registered (pj_init in Endpoint constructor)")
 
-                libStart()
-                log("PJSIP started successfully")
+                // Define LogWriter locally to avoid class loading issues before libCreate
+                val writer = object : LogWriter() {
+                    override fun write(entry: LogEntry) {
+                        val msg = entry.msg
+                        if (!msg.isNullOrBlank()) {
+                            val trimmed = msg.trim()
+                            com.ipdial.util.SipLogger.log("PJSIP", trimmed)
+                            Log.d("PJSIP", trimmed)
+                        }
+                    }
+                }
+                this.logWriter = writer
+
+                ep.apply {
+                    val epCfg = EpConfig().apply {
+                        logConfig.level = 6
+                        logConfig.consoleLevel = 6
+                        logConfig.writer = writer
+
+                        medConfig.apply {
+                            ecOptions = 0
+                            ecTailLen = 200
+                            noVad = true
+                            clockRate = 8000
+                            sndClockRate = 8000
+                            quality = 4
+                        }
+                        uaConfig.apply {
+                            userAgent = "IPDial/1.0 (Android)"
+                            maxCalls = 4
+                            // Use Google STUN server
+                            stunServer.add("stun.l.google.com:19302")
+                        }
+                    }
+                    libInit(epCfg)
+
+                    val sipTpCfg = TransportConfig()
+                    sipTpCfg.port = 0
+                    try {
+                        udpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_UDP, sipTpCfg)
+                    } catch (e: Exception) { log("#$callId: Failed to create UDP transport: ${e.message}", true) }
+
+                    val tcpTpCfg = TransportConfig()
+                    tcpTpCfg.port = 0
+                    try {
+                        tcpTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TCP, tcpTpCfg)
+                    } catch (e: Exception) { log("#$callId: Failed to create TCP transport: ${e.message}", true) }
+
+                    val tlsTpCfg = TransportConfig()
+                    tlsTpCfg.tlsConfig.verifyServer = true
+                    tlsTpCfg.tlsConfig.verifyClient = false
+                    try {
+                        tlsTransportId = transportCreate(pjsip_transport_type_e.PJSIP_TRANSPORT_TLS, tlsTpCfg)
+                    } catch (e: Exception) { log("#$callId: Failed to create TLS transport: ${e.message}", true) }
+
+                    libStart()
+                    log("#$callId: PJSIP started successfully")
+
+                    endpoint = ep
+                }
+            } catch (e: Throwable) {
+                log("#$callId: PJSIP init failed: ${e.message}", true)
             }
-        } catch (e: Throwable) {
-            log("PJSIP init failed: ${e.message}", true)
         }
     }
 
@@ -187,7 +234,8 @@ object SipEngine {
                     "sip:${account.domain}"
                 }
 
-                regConfig.timeoutSec = 300
+                regConfig.timeoutSec = 120
+                regConfig.retryIntervalSec = 30
 
                 val cred = AuthCredInfo("digest", "*", account.username, 0, account.password)
                 sipConfig.authCreds.add(cred)
@@ -212,15 +260,20 @@ object SipEngine {
                 natConfig.iceEnabled = false
                 natConfig.turnEnabled = false
                 natConfig.sipStunUse = pjsua_stun_use.PJSUA_STUN_USE_DEFAULT
+                // Enable contact rewriting for NAT traversal
+                natConfig.contactRewriteUse = 1
+                natConfig.sipOutboundUse = 0
             }
 
             val pjAcc = PjAccount(account.id)
             try {
+                // Configure codecs BEFORE creating account to ensure initial REGISTER/INVITE are small
+                configureCodecs(account.codec, account.ecEnabled, account.nsEnabled, account.agcEnabled)
+                
                 pjAcc.create(acfg)
                 accountMap[account.id] = pjAcc
                 accountConfigs[account.id] = account
                 log("Account added successfully: ${account.id} (${account.username})")
-                configureCodecs(account.codec, account.ecEnabled, account.nsEnabled, account.agcEnabled)
             } catch (e: Throwable) {
                 pjAcc.delete()
                 throw e
@@ -297,8 +350,8 @@ object SipEngine {
                 log("makeCall failed: accountId $accountId not found in accountMap.", true)
                 return false
             }
-            val destUri = if (destination.startsWith("sip:")) destination else "sip:$destination"
-
+            val destUri = formatSipUri(destination, accountId)
+            log("makeCall: destination=$destination -> destUri=$destUri")
             log("making call to $destUri")
             val call = PjCall(pjAcc)
 
@@ -395,6 +448,28 @@ object SipEngine {
         audioManager.isSpeakerphoneOn = enabled
     }
 
+    fun setCallVolume(factor: Float) {
+        registerCurrentThread()
+        log("Adjusting call volume (Rx level) to factor: $factor")
+        _callSession.value?.let { session ->
+            callMap[session.callId]?.let { call ->
+                try {
+                    val ci = call.info
+                    for (i in 0 until ci.media.size) {
+                        val mi = ci.media.get(i)
+                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
+                            mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
+                            val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index.toLong()))
+                            aud.adjustRxLevel(factor)
+                        }
+                    }
+                } catch (e: Throwable) {
+                    log("setCallVolume failed: ${e.message}", true)
+                }
+            }
+        }
+    }
+
     fun startRecording(filePath: String) {
         registerCurrentThread()
         try {
@@ -475,21 +550,18 @@ object SipEngine {
 
             log("Configuring codecs. Target: $targetCodecKeyword")
 
-            // STRICT WHITELIST to keep INVITE packet small (< 1500 bytes)
-            // Enabling many codecs adds many lines to SDP, which causes routers to drop UDP packets.
             for (i in 0 until codecs.size) {
                 val codec = codecs.get(i)
                 val codecId = codec.codecId
                 val name = codecId.lowercase()
 
-                // v1.0.6 approach: Only enable essential codecs. Disable everything else.
-                val isG7221 = name.contains("g7221") // Avoid G722.1 (bulky)
-                
+                // Only enable the EXACT target codec. 
+                // We don't even add fallbacks to keep packet as small as possible.
+                // SIP servers usually support PCMA/PCMU if everything else fails.
                 val priority: Short = when {
-                    name.contains(targetCodecKeyword) && !isG7221 -> 250
-                    name.contains("pcma") || name.contains("pcmu") -> 150
-                    name.contains("g729") -> 100
-                    name.contains("opus") -> 80
+                    name.contains(targetCodecKeyword) -> 250
+                    // Only keep PCMA as absolute fallback if target was different
+                    targetCodecKeyword != "pcma" && name == "pcma/8000/1" -> 100
                     else -> 0
                 }
                 
@@ -532,21 +604,22 @@ object SipEngine {
         override fun onRegState(prm: OnRegStateParam) {
             try {
                 val ai = try { info } catch (e: Throwable) {
-                    log("Account $accountId info retrieval failed during onRegState: ${e.message}", true)
+                    log("CRITICAL: Account $accountId info retrieval failed: ${e.message}", true)
                     return
                 }
 
                 if (ai == null) {
-                    log("Account $accountId info is null during onRegState", true)
+                    log("CRITICAL: Account $accountId info is null", true)
                     return
                 }
 
                 val status = when {
                     ai.regIsActive -> RegStatus.REGISTERED
+                    ai.regStatus / 100 == 2 -> RegStatus.REGISTERED
                     ai.regStatus >= 300 -> RegStatus.ERROR
                     else -> RegStatus.UNREGISTERED
                 }
-                log("Account $accountId reg status: $status (code=${ai.regStatus}, reason=${ai.regStatusText})")
+                log("REG_UPDATE: Account $accountId status=$status (code=${ai.regStatus}, reason=${ai.regStatusText}, active=${ai.regIsActive})")
                 _registrationEvents.tryEmit(Pair(accountId, status))
             } catch (e: Throwable) {
                 log("onRegState failed for account $accountId: ${e.message}", true)
@@ -554,6 +627,7 @@ object SipEngine {
         }
 
         override fun onIncomingCall(prm: OnIncomingCallParam) {
+            log("INCOMING_CALL: Received callId=${prm.callId} for account $accountId")
             try {
                 val call = PjCall(this, prm.callId)
                 callMap[prm.callId] = call
@@ -722,6 +796,30 @@ object SipEngine {
             } catch (e: Throwable) {
                 log("onCallMediaState failed: ${e.message}", true)
             }
+        }
+    }
+
+    private fun formatSipUri(destination: String, accountId: String? = null): String {
+        // If it's already a full SIP URI with a domain, just return it
+        if (destination.startsWith("sip:") && destination.contains("@")) return destination
+
+        val cleanDestination = destination.removePrefix("sip:").substringBefore("@")
+        var number = cleanDestination.removePrefix("+")
+        
+        // Bangladesh formatting: If starts with '0' and looks like a mobile/landline number, prepend '88'
+        // We use a length check of 10 to avoid prefixing short codes like 123
+        if (number.length >= 10 && number.startsWith("0")) {
+            number = "880${number.removePrefix("0")}"
+        }
+
+        // Try to append the domain from the provided account or the active session
+        val targetAccountId = accountId ?: _callSession.value?.accountId
+        val domain = if (targetAccountId != null) accountConfigs[targetAccountId]?.domain else null
+        
+        return if (!domain.isNullOrBlank()) {
+            "sip:$number@$domain"
+        } else {
+            "sip:$number"
         }
     }
 }

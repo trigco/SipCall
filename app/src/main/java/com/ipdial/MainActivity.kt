@@ -226,6 +226,23 @@ class MainActivity : ComponentActivity() {
                 }
             } else if (i.action == "com.ipdial.TEST_HANGUP") {
                 vm.hangup()
+            } else if (i.action == "com.ipdial.ACTION_INCOMING_CALL") {
+                vm.setShowFullIncomingScreen(true)
+            } else if (i.action == Intent.ACTION_DIAL || i.action == Intent.ACTION_VIEW || i.action == Intent.ACTION_CALL) {
+                val data = i.data
+                if (data != null && data.scheme == "tel") {
+                    val number = data.schemeSpecificPart
+                    if (!number.isNullOrBlank()) {
+                        if (i.action == Intent.ACTION_CALL) {
+                            vm.makeCall(number)
+                        } else {
+                            vm.setDialString(androidx.compose.ui.text.input.TextFieldValue(
+                                text = number,
+                                selection = androidx.compose.ui.text.TextRange(number.length)
+                            ))
+                        }
+                    }
+                }
             }
         }
     }
@@ -249,6 +266,22 @@ class MainActivity : ComponentActivity() {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
         }
         if (missing.isNotEmpty()) permissionsLauncher.launch(missing.toTypedArray())
+
+        checkBatteryOptimizations()
+    }
+
+    private fun checkBatteryOptimizations() {
+        val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+        if (!pm.isIgnoringBatteryOptimizations(packageName)) {
+            try {
+                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Failed to request battery optimization exclusion", e)
+            }
+        }
     }
 }
 
@@ -270,18 +303,22 @@ sealed class NavDest(val route: String, val label: String, val icon: ImageVector
 fun IPDialApp() {
     val vm: SipViewModel = viewModel()
     val callSession by vm.callSession.collectAsState()
-    val callingCardsEnabled by vm.callingCardsEnabled.collectAsState()
-    var showFullIncomingScreen by remember { mutableStateOf(false) }
+    val showFullIncomingScreen by vm.showFullIncomingScreen.collectAsState()
 
-    LaunchedEffect(callSession, callingCardsEnabled) {
+    LaunchedEffect(callSession) {
         val session = callSession
         if (session == null) {
-            showFullIncomingScreen = false
-        } else if (session.direction == CallDirection.INCOMING && 
-                   (session.state == CallState.INCOMING || session.state == CallState.EARLY)) {
-            showFullIncomingScreen = true
+            vm.setShowFullIncomingScreen(false)
+        } else if (session.direction == CallDirection.INCOMING) {
+            if (session.state == CallState.INCOMING || session.state == CallState.EARLY) {
+                if (!AppState.isForeground) {
+                    vm.setShowFullIncomingScreen(true)
+                }
+            } else {
+                vm.setShowFullIncomingScreen(true)
+            }
         } else {
-            showFullIncomingScreen = true
+            vm.setShowFullIncomingScreen(true)
         }
     }
     
@@ -326,7 +363,7 @@ fun IPDialApp() {
                     callSession = callSession,
                     showFullIncomingScreen = showFullIncomingScreen,
                     onOpenDrawer = { scope.launch { drawerState.open() } },
-                    onShowFullIncoming = { showFullIncomingScreen = true }
+                    onShowFullIncoming = { vm.setShowFullIncomingScreen(true) }
                 )
             }
         }
