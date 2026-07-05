@@ -89,7 +89,7 @@ class SipConnectionService : ConnectionService() {
         connectionManagerPhoneAccount: PhoneAccountHandle?,
         request: ConnectionRequest?
     ): Connection {
-        Log.d(TAG, "onCreateIncomingConnection")
+        Log.d(TAG, "onCreateIncomingConnection from Telecom framework")
         com.ipdial.util.SipLogger.log(TAG, "onCreateIncomingConnection called by Telecom framework")
         val connection = SipConnection()
         request?.address?.let { connection.setAddress(it, TelecomManager.PRESENTATION_ALLOWED) }
@@ -108,7 +108,10 @@ class SipConnectionService : ConnectionService() {
         SipEngine.callSession.value?.let { session ->
             connection.callId = session.callId
             registerConnection(session.callId, connection)
+            Log.d(TAG, "Incoming Connection registered with callId=${session.callId}")
             com.ipdial.util.SipLogger.log(TAG, "Incoming Connection registered with callId=${session.callId}")
+        } ?: run {
+            Log.w(TAG, "onCreateIncomingConnection: SipEngine.callSession is NULL")
         }
         
         return connection

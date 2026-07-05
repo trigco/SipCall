@@ -1,6 +1,7 @@
 package com.ipdial.ui.screens
 
 import androidx.compose.animation.core.*
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -38,6 +39,7 @@ import kotlin.math.roundToInt
 
 @Composable
 fun IncomingCallScreen(vm: SipViewModel, session: CallSession) {
+    Log.d("IncomingCallScreen", "Rendering IncomingCallScreen for ${session.remoteUri}")
     val accounts by vm.accounts.collectAsState()
     val contacts by vm.contacts.collectAsState()
     

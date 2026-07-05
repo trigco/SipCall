@@ -80,7 +80,11 @@ class SipService : Service() {
         }
 
         fun showIncomingCallNotificationStatic(context: Context, callerName: String, callId: Int) {
-            if (com.ipdial.AppState.isForeground) return
+            Log.d("SipService", "showIncomingCallNotificationStatic: caller=$callerName, isForeground=${com.ipdial.AppState.isForeground}")
+            if (com.ipdial.AppState.isForeground) {
+                Log.d("SipService", "App is in foreground, skipping system notification (expecting in-app banner)")
+                return
+            }
 
             val fullscreenIntent = Intent(context, MainActivity::class.java).apply {
                 action = "com.ipdial.ACTION_INCOMING_CALL"
@@ -158,6 +162,62 @@ class SipService : Service() {
         createNotificationChannels()
         TelecomHelper.registerPhoneAccount(applicationContext)
         
+        // 0. Set the incoming call listener as early as possible
+        SipEngine.onIncomingCall = { session -> 
+            Log.d("SipService", "onIncomingCall lambda triggered for callId=${session.callId}")
+            com.ipdial.util.SipLogger.log("SipService", "Incoming call received: ${session.remoteUri}")
+            scope.launch {
+                val isDnd = repo.dndEnabled.first()
+                if (isDnd) {
+                    Log.d("SipService", "DND enabled, hanging up callId=${session.callId}")
+                    SipEngine.hangupCall(session.callId)
+                } else {
+                    // Resolve contact name or clean number
+                    val displayName = session.remoteDisplayName
+                    val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
+                    
+                    Log.d("SipService", "Processing incoming call from $cleanNum")
+                    
+                    val contactsRepo = com.ipdial.data.repository.ContactsRepository(applicationContext)
+                    val contacts = contactsRepo.getContacts("")
+                    val cleanedSessionDigits = cleanNum.filter { it.isDigit() }
+                    
+                    var matchedContact: com.ipdial.data.model.Contact? = null
+                    if (cleanedSessionDigits.length >= 10) {
+                        matchedContact = contacts.find { c ->
+                            c.numbers.any { n ->
+                                val cleanedContactDigits = n.filter { it.isDigit() }
+                                cleanedContactDigits.length >= 10 && (cleanedSessionDigits.contains(cleanedContactDigits) || cleanedContactDigits.contains(cleanedSessionDigits))
+                            }
+                        }
+                    }
+                    
+                    val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
+                    Log.d("SipService", "Final display name: $finalDisplayName")
+                    
+                    // Update session display name for logging and UI consistency
+                    SipEngine.updateCallSessionName(finalDisplayName)
+                    
+                            withContext(Dispatchers.Main) {
+                                Log.d("SipService", "Reporting incoming call to Telecom and showing notification")
+                                TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
+                                showIncomingCallNotification(finalDisplayName, session.callId)
+                                
+                                // FORCE start activity as a fallback for some devices where Telecom might be silent
+                                try {
+                                    val intent = Intent(applicationContext, com.ipdial.MainActivity::class.java).apply {
+                                        action = "com.ipdial.ACTION_INCOMING_CALL"
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                                    }
+                                    applicationContext.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Log.e("SipService", "Failed to force start MainActivity", e)
+                                }
+                            }
+                }
+            }
+        }
+
         startServiceForeground()
 
         scope.launch {
@@ -166,45 +226,6 @@ class SipService : Service() {
                 SipEngine.init(applicationContext)
             }
             
-            Handler(Looper.getMainLooper()).post {
-                SipEngine.onIncomingCall = { session -> 
-                    scope.launch {
-                        val isDnd = repo.dndEnabled.first()
-                        if (isDnd) {
-                            SipEngine.hangupCall(session.callId)
-                        } else {
-                            // Resolve contact name or clean number
-                            val displayName = session.remoteDisplayName
-                            val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
-                            
-                            val contactsRepo = com.ipdial.data.repository.ContactsRepository(applicationContext)
-                            val contacts = contactsRepo.getContacts("")
-                            val cleanedSessionDigits = cleanNum.filter { it.isDigit() }
-                            
-                            var matchedContact: com.ipdial.data.model.Contact? = null
-                            if (cleanedSessionDigits.length >= 10) {
-                                matchedContact = contacts.find { c ->
-                                    c.numbers.any { n ->
-                                        val cleanedContactDigits = n.filter { it.isDigit() }
-                                        cleanedContactDigits.length >= 10 && (cleanedSessionDigits.contains(cleanedContactDigits) || cleanedContactDigits.contains(cleanedSessionDigits))
-                                    }
-                                }
-                            }
-                            
-                            val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
-                            
-                            // Update session display name for logging and UI consistency
-                            SipEngine.updateCallSessionName(finalDisplayName)
-                            
-                            withContext(Dispatchers.Main) {
-                                TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
-                                showIncomingCallNotification(finalDisplayName, session.callId)
-                            }
-                        }
-                    }
-                }
-            }
-
             // 3. Migration: Ensure default codec is G711A for AmarIP compatibility (what worked in v1.0.6)
             try {
                 val accountsList = repo.accounts.first()

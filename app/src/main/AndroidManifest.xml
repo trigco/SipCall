@@ -70,17 +70,19 @@
             </intent-filter>
 
             <!-- Handle tel: links and dialer actions -->
-            <intent-filter>
+            <intent-filter android:priority="100">
                 <action android:name="android.intent.action.DIAL" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="tel" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:priority="100">
                 <action android:name="android.intent.action.CALL" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="tel" />
             </intent-filter>
-            <intent-filter>
+            <intent-filter android:priority="100">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />

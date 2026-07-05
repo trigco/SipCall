@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 class IPDialApplication : Application() {
     override fun onCreate() {
         super.onCreate()
+        android.util.Log.d("IPDialApp", "Application.onCreate")
         
         // Load PJSIP library on Main thread to ensure proper registration
         try {

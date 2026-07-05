@@ -2,6 +2,7 @@ package com.ipdial
 
 import android.Manifest
 import android.app.KeyguardManager
+import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -307,17 +308,16 @@ fun IPDialApp() {
 
     LaunchedEffect(callSession) {
         val session = callSession
+        Log.d("MainActivity", "callSession effect: state=${session?.state}, direction=${session?.direction}, isForeground=${AppState.isForeground}")
+        
         if (session == null) {
             vm.setShowFullIncomingScreen(false)
         } else if (session.direction == CallDirection.INCOMING) {
-            if (session.state == CallState.INCOMING || session.state == CallState.EARLY) {
-                if (!AppState.isForeground) {
-                    vm.setShowFullIncomingScreen(true)
-                }
-            } else {
-                vm.setShowFullIncomingScreen(true)
-            }
+            // For incoming calls, if app is in background, it will be handled by high-priority notification.
+            // If in foreground, show the banner first (default behavior).
+            vm.setShowFullIncomingScreen(false)
         } else {
+            // Outgoing calls always show full screen
             vm.setShowFullIncomingScreen(true)
         }
     }
@@ -578,13 +578,16 @@ fun AppMainContent(
     onOpenDrawer: () -> Unit,
     onShowFullIncoming: () -> Unit
 ) {
+    Log.d("MainActivity", "AppMainContent: session=${callSession?.state}, showFull=$showFullIncomingScreen")
     if (callSession != null && showFullIncomingScreen) {
         CallOverlay(vm, callSession)
     } else {
         Box(modifier = Modifier.fillMaxSize()) {
             AppNavHost(vm, navController, innerPadding, onOpenDrawer)
             
-            IncomingCallBannerOverlay(vm, callSession, onShowFullIncoming)
+            Box(Modifier.fillMaxWidth().align(Alignment.TopCenter)) {
+                IncomingCallBannerOverlay(vm, callSession, onShowFullIncoming)
+            }
         }
     }
 }
@@ -676,6 +679,8 @@ fun IncomingCallBannerOverlay(
     if (callSession != null && 
         callSession.direction == CallDirection.INCOMING &&
         (callSession.state == CallState.INCOMING || callSession.state == CallState.EARLY)) {
+        
+        Log.d("MainActivity", "Rendering IncomingCallBannerOverlay for ${callSession.remoteUri}")
         
         val contacts by vm.contacts.collectAsState()
         val contact = remember(callSession.remoteUri, contacts) {

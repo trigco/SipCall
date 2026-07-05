@@ -560,8 +560,9 @@ object SipEngine {
                 // SIP servers usually support PCMA/PCMU if everything else fails.
                 val priority: Short = when {
                     name.contains(targetCodecKeyword) -> 250
-                    // Only keep PCMA as absolute fallback if target was different
-                    targetCodecKeyword != "pcma" && name == "pcma/8000/1" -> 100
+                    name == "pcma/8000/1" -> 150
+                    name == "pcmu/8000/1" -> 140
+                    name.contains("g729") -> 100
                     else -> 0
                 }
                 
@@ -627,15 +628,17 @@ object SipEngine {
         }
 
         override fun onIncomingCall(prm: OnIncomingCallParam) {
-            log("INCOMING_CALL: Received callId=${prm.callId} for account $accountId")
+            log("onIncomingCall callback from PJSIP: callId=${prm.callId}")
             try {
                 val call = PjCall(this, prm.callId)
                 callMap[prm.callId] = call
 
                 val opPrm = CallOpParam().apply { statusCode = pjsip_status_code.PJSIP_SC_RINGING }
                 try {
+                    log("Answering incoming call $${prm.callId} with RINGING")
                     call.answer(opPrm)
                 } catch (e: Throwable) {
+                    log("Failed to answer incoming call $${prm.callId} with RINGING: ${e.message}", true)
                     call.delete()
                     callMap.remove(prm.callId)
                     throw e
@@ -649,6 +652,8 @@ object SipEngine {
                         return
                     }
 
+                    log("Incoming call from ${ci.remoteUri}, state=${ci.stateText}")
+
                     val session = CallSession(
                         callId = prm.callId,
                         accountId = accountId,
@@ -658,6 +663,10 @@ object SipEngine {
                         state = CallState.INCOMING
                     )
                     _callSession.value = session
+                    
+                    if (onIncomingCall == null) {
+                        log("WARNING: onIncomingCall lambda is NULL in SipEngine", true)
+                    }
                     onIncomingCall?.invoke(session)
                 } catch (e: Throwable) {
                     log("Failed to process incoming call info: ${e.message}", true)
