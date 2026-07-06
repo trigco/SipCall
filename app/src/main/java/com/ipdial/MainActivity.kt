@@ -2,6 +2,7 @@ package com.ipdial
 
 import android.Manifest
 import android.app.KeyguardManager
+import androidx.compose.foundation.background
 import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -107,6 +108,8 @@ import com.ipdial.ui.screens.IncomingCallScreen
 import com.ipdial.ui.screens.PrivacyPolicyScreen
 import com.ipdial.ui.screens.RecordingsScreen
 import com.ipdial.ui.screens.SettingsScreen
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
 import com.ipdial.ui.theme.IPDialTheme
 import kotlinx.coroutines.launch
 
@@ -313,9 +316,14 @@ fun IPDialApp() {
         if (session == null) {
             vm.setShowFullIncomingScreen(false)
         } else if (session.direction == CallDirection.INCOMING) {
-            // For incoming calls, if app is in background, it will be handled by high-priority notification.
-            // If in foreground, show the banner first (default behavior).
-            vm.setShowFullIncomingScreen(false)
+            // When app is in foreground and call comes in, show full screen if locked,
+            // otherwise show full screen immediately as requested for "while app is opened"
+            val km = vm.getApplication<android.app.Application>().getSystemService(android.content.Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
+            if (km.isKeyguardLocked) {
+                vm.setShowFullIncomingScreen(true)
+            } else {
+                vm.setShowFullIncomingScreen(true)
+            }
         } else {
             // Outgoing calls always show full screen
             vm.setShowFullIncomingScreen(true)
@@ -722,37 +730,46 @@ fun IncomingCallBanner(
 ) {
     Surface(
         onClick = onClick,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        shape = RoundedCornerShape(16.dp),
+        color = Color(0xFFF0F0F0), // Lighter gray for system-like look
+        shape = RoundedCornerShape(24.dp), // More rounded like modern Android notifications
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 8.dp, vertical = 8.dp)
             .statusBarsPadding()
-            .shadow(8.dp, RoundedCornerShape(16.dp))
+            .shadow(12.dp, RoundedCornerShape(24.dp))
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Call,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp)
-            )
-            Spacer(Modifier.width(12.dp))
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(Color.Gray.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Call,
+                    contentDescription = null,
+                    tint = Color.DarkGray,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "Incoming Call",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.DarkGray
                 )
                 Text(
                     text = displayName,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.Black,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -764,27 +781,27 @@ fun IncomingCallBanner(
                     containerColor = com.ipdial.ui.theme.EndRed,
                     contentColor = Color.White
                 ),
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(44.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.CallEnd,
                     contentDescription = "Decline",
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(12.dp))
             IconButton(
                 onClick = onAnswer,
                 colors = IconButtonDefaults.iconButtonColors(
                     containerColor = com.ipdial.ui.theme.ForestGreen,
                     contentColor = Color.White
                 ),
-                modifier = Modifier.size(36.dp)
+                modifier = Modifier.size(44.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Call,
                     contentDescription = "Answer",
-                    modifier = Modifier.size(20.dp)
+                    modifier = Modifier.size(24.dp)
                 )
             }
         }
