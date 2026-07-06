@@ -482,15 +482,22 @@ class SipService : Service() {
     
     private var ringtone: Ringtone? = null
     private var mediaPlayer: android.media.MediaPlayer? = null
+    private var isPlayingRingtone = false
 
     private fun playRingtone() {
-        if (ringtone?.isPlaying == true || mediaPlayer?.isPlaying == true) return
+        if (isPlayingRingtone || ringtone?.isPlaying == true || mediaPlayer?.isPlaying == true) return
+        isPlayingRingtone = true
         scope.launch {
             try {
                 val ringtoneUriStr = repo.globalRingtone.first()
                 val vibrateEnabled = repo.globalVibrate.first()
                 
                 withContext(Dispatchers.Main) {
+                    // Check again on main thread to avoid races
+                    if (ringtone?.isPlaying == true || mediaPlayer?.isPlaying == true) {
+                        return@withContext
+                    }
+
                     if (ringtoneUriStr == "android.resource://$packageName/raw/ipdial_ringtone") {
                         mediaPlayer = android.media.MediaPlayer.create(applicationContext, R.raw.ipdial_ringtone)
                         mediaPlayer?.isLooping = true
@@ -499,11 +506,28 @@ class SipService : Service() {
                         val ringtoneUri = ringtoneUriStr?.let { android.net.Uri.parse(it) }
                             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
                         
-                        ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                            ringtone?.isLooping = true
+                        try {
+                            // Try MediaPlayer for guaranteed looping on all versions
+                            val mp = android.media.MediaPlayer()
+                            mp.setDataSource(applicationContext, ringtoneUri)
+                            mp.setAudioAttributes(
+                                android.media.AudioAttributes.Builder()
+                                    .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build()
+                            )
+                            mp.isLooping = true
+                            mp.prepare()
+                            mp.start()
+                            mediaPlayer = mp
+                        } catch (e: Exception) {
+                            Log.e("SipService", "MediaPlayer failed for ringtone, falling back to RingtoneManager", e)
+                            ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                ringtone?.isLooping = true
+                            }
+                            ringtone?.play()
                         }
-                        ringtone?.play()
                     }
                     
                     if (vibrateEnabled) {
@@ -512,11 +536,13 @@ class SipService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e("SipService", "Failed to play ringtone", e)
+                isPlayingRingtone = false
             }
         }
     }
 
     private fun stopRingtone() {
+        isPlayingRingtone = false
         try {
             ringtone?.stop()
             ringtone = null
