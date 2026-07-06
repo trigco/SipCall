@@ -50,8 +50,10 @@ object TelecomHelper {
         val cleanNumber = number.removePrefix("sip:")
         val extras = Bundle().apply {
             putParcelable(TelecomManager.EXTRA_INCOMING_CALL_ADDRESS, Uri.fromParts("ipdial", cleanNumber, null))
+            putBoolean("android.telecom.extra.SKIP_CALL_LOGGING", true)
             val incomingExtras = Bundle().apply {
                 putString("com.ipdial.EXTRA_CALLER_NAME", name)
+                putBoolean("android.telecom.extra.SKIP_CALL_LOGGING", true)
             }
             putBundle(TelecomManager.EXTRA_INCOMING_CALL_EXTRAS, incomingExtras)
         }
@@ -80,9 +82,11 @@ object TelecomHelper {
         // Put accountId in both the root extras and the outgoing call extras bundle for compatibility
         val extras = Bundle().apply {
             putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, handle)
+            putBoolean("android.telecom.extra.SKIP_CALL_LOGGING", true)
             putString("com.ipdial.EXTRA_ACCOUNT_ID", accountId)
             val subExtras = Bundle().apply {
                 putString("com.ipdial.EXTRA_ACCOUNT_ID", accountId)
+                putBoolean("android.telecom.extra.SKIP_CALL_LOGGING", true)
             }
             putBundle(TelecomManager.EXTRA_OUTGOING_CALL_EXTRAS, subExtras)
         }

@@ -1,1 +1,0 @@
-/Users/igeneration/ipdial/IPDial/app/src/main/cpp/CMakeLists.txt

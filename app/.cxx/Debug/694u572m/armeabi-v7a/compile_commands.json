@@ -1,7 +1,0 @@
-[
-{
-  "directory": "/Users/igeneration/ipdial/IPDial/app/.cxx/Debug/694u572m/armeabi-v7a",
-  "command": "/Users/igeneration/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang++ --target=armv7-none-linux-androideabi26 --sysroot=/Users/igeneration/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -Dpjsip_register_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security   -fno-limit-debug-info  -fPIC -o CMakeFiles/pjsip_register.dir/pjsip_register.cpp.o -c /Users/igeneration/ipdial/IPDial/app/src/main/cpp/pjsip_register.cpp",
-  "file": "/Users/igeneration/ipdial/IPDial/app/src/main/cpp/pjsip_register.cpp"
-}
-]

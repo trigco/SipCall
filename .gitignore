@@ -5,6 +5,7 @@
 /build/
 /captures/
 /.externalNativeBuild/
+/app/.cxx/
 
 # Artifacts
 *.apk

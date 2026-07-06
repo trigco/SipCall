@@ -70,23 +70,30 @@
             </intent-filter>
 
             <!-- Handle tel: links and dialer actions -->
-            <intent-filter android:priority="100">
+            <intent-filter android:priority="10">
                 <action android:name="android.intent.action.DIAL" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="tel" />
             </intent-filter>
-            <intent-filter android:priority="100">
+            <intent-filter android:priority="10">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="tel" />
+            </intent-filter>
+            <intent-filter android:priority="10">
                 <action android:name="android.intent.action.CALL" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="tel" />
             </intent-filter>
-            <intent-filter android:priority="100">
-                <action android:name="android.intent.action.VIEW" />
+
+            <!-- Support Smart Selection / Contextual Menu for phone numbers -->
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="tel" />
+                <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
 

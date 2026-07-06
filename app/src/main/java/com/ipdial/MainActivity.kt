@@ -247,6 +247,14 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
+            } else if (i.action == Intent.ACTION_PROCESS_TEXT) {
+                val text = i.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+                if (!text.isNullOrBlank()) {
+                    vm.setDialString(androidx.compose.ui.text.input.TextFieldValue(
+                        text = text,
+                        selection = androidx.compose.ui.text.TextRange(text.length)
+                    ))
+                }
             }
         }
     }

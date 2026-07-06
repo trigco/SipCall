@@ -1,3 +1,0 @@
-/Users/igeneration/ipdial/IPDial/app/.cxx/Debug/694u572m/armeabi-v7a/CMakeFiles/pjsip_register.dir
-/Users/igeneration/ipdial/IPDial/app/.cxx/Debug/694u572m/armeabi-v7a/CMakeFiles/edit_cache.dir
-/Users/igeneration/ipdial/IPDial/app/.cxx/Debug/694u572m/armeabi-v7a/CMakeFiles/rebuild_cache.dir
