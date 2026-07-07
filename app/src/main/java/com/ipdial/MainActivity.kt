@@ -1,12 +1,12 @@
 package com.ipdial
 
 import android.Manifest
+import android.app.Application
 import android.app.KeyguardManager
 import androidx.compose.foundation.background
 import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -85,6 +85,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -283,15 +284,14 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun checkBatteryOptimizations() {
-        val pm = getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+        val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {
             try {
-                val intent = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
-                    data = Uri.parse("package:$packageName")
-                }
-                startActivity(intent)
+                // Instead of requesting, just log or guide. 
+                // Play Store forbids ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS for most apps.
+                Log.i("MainActivity", "App is not ignoring battery optimizations")
             } catch (e: Exception) {
-                android.util.Log.e("MainActivity", "Failed to request battery optimization exclusion", e)
+                Log.e("MainActivity", "Failed to check battery optimization", e)
             }
         }
     }
@@ -326,8 +326,8 @@ fun IPDialApp() {
         } else if (session.direction == CallDirection.INCOMING) {
             // When app is in foreground and call comes in, show full screen if locked,
             // otherwise show full screen immediately as requested for "while app is opened"
-            val km = vm.getApplication<android.app.Application>().getSystemService(android.content.Context.KEYGUARD_SERVICE) as android.app.KeyguardManager
-            if (km.isKeyguardLocked) {
+            val km = vm.getApplication<Application>().getSystemService(KeyguardManager::class.java)
+            if (km?.isKeyguardLocked == true) {
                 vm.setShowFullIncomingScreen(true)
             } else {
                 vm.setShowFullIncomingScreen(true)
@@ -405,7 +405,7 @@ fun UpdateCheckDialog() {
             text = { Text("A new version (${updateRelease?.tagName}) is available on GitHub. Would you like to download it?\n\n${updateRelease?.body}") },
             confirmButton = {
                 Button(onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateRelease?.htmlUrl))
+                    val intent = Intent(Intent.ACTION_VIEW, updateRelease?.htmlUrl?.toUri())
                     context.startActivity(intent)
                     updateRelease = null
                 }) { Text("Download") }
@@ -554,9 +554,6 @@ fun AppBottomBar(
     callSession: CallSession?,
     showFullIncomingScreen: Boolean
 ) {
-    val vm: SipViewModel = viewModel()
-    val isPro by vm.isPro.collectAsState()
-
     // Remove GetPro from the bottom bar; it is available in the drawer as "IPDial Pro"
     val bottomTabs = listOf(NavDest.Home, NavDest.Keypad, NavDest.Contacts)
 
@@ -722,11 +719,6 @@ fun IncomingCallBannerOverlay(
             onClick = onShowFullIncoming
         )
     }
-}
-
-@Composable
-fun AdDialog(onDismiss: () -> Unit) {
-    // AdDialog removed
 }
 
 @Composable
