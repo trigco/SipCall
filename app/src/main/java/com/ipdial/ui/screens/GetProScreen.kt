@@ -91,7 +91,7 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
     val context = LocalContext.current
     var code by remember { mutableStateOf("") }
-    val referralCode = remember { vm.getReferralCode() }
+    val referralCode by vm.deviceId.collectAsState()
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Referral", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

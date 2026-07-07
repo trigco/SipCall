@@ -107,6 +107,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     val adsEnabled: StateFlow<Boolean> = repo.adsEnabled
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    val deviceId: StateFlow<String> = repo.deviceId.map { it ?: "" }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "")
+
     val proPoints: StateFlow<Int> = repo.proPoints
         .stateIn(viewModelScope, SharingStarted.Eagerly, 0)
         
@@ -142,11 +145,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     fun setDefaultDomain(domain: String) = viewModelScope.launch { repo.setDefaultDomain(domain) }
     fun setAdsEnabled(enabled: Boolean) = viewModelScope.launch { repo.setAdsEnabled(enabled) }
 
-    fun getReferralCode(): String {
-        return try {
-            android.provider.Settings.Secure.getString(getApplication<Application>().contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: ""
-        } catch (_: Exception) { "" }
-    }
+    fun getReferralCode(): String = deviceId.value
 
     fun claimReferral(code: String, onComplete: (Boolean, String) -> Unit) {
         try {
@@ -443,9 +442,14 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         }
         refreshContacts()
 
+        // Ensure deviceId is created
+        viewModelScope.launch {
+            repo.getOrCreateDeviceId()
+        }
+
         // Initialize Firestore sync for points/expiration
         try {
-            firestoreSync = FirestorePointsSync(app, repo)
+            firestoreSync = FirestorePointsSync(repo)
             firestoreSync?.startListening()
         } catch (_: Exception) {}
 

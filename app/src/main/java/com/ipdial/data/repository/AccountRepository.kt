@@ -13,7 +13,9 @@ import com.ipdial.data.model.KeypadDesign
 import com.ipdial.data.model.SipAccount
 import com.ipdial.data.model.ThemeMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.util.UUID
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "ipdial_accounts")
 
@@ -32,6 +34,7 @@ class AccountRepository(private val context: Context) {
     private val defaultDomainKey = stringPreferencesKey("default_domain")
     private val lastDialedKey = stringPreferencesKey("last_dialed")
     private val adsEnabledKey = booleanPreferencesKey("ads_enabled")
+    private val deviceIdKey = stringPreferencesKey("device_id")
     private val proPointsKey = androidx.datastore.preferences.core.intPreferencesKey("pro_points")
     private val proExpirationKey = androidx.datastore.preferences.core.longPreferencesKey("pro_expiration")
     private val recordingCounterKey = androidx.datastore.preferences.core.intPreferencesKey("recording_counter")
@@ -73,9 +76,20 @@ class AccountRepository(private val context: Context) {
 
     val adsEnabled: Flow<Boolean> = context.dataStore.data.map { it[adsEnabledKey] ?: true }
 
+    val deviceId: Flow<String?> = context.dataStore.data.map { it[deviceIdKey] }
+
     val proPoints: Flow<Int> = context.dataStore.data.map { it[proPointsKey] ?: 3 }
     val proExpiration: Flow<Long> = context.dataStore.data.map { it[proExpirationKey] ?: 0L }
     val recordingCounter: Flow<Int> = context.dataStore.data.map { it[recordingCounterKey] ?: 0 }
+
+    suspend fun getOrCreateDeviceId(): String {
+        val current = context.dataStore.data.map { it[deviceIdKey] }.first()
+        if (!current.isNullOrBlank()) return current
+        
+        val newId = UUID.randomUUID().toString()
+        context.dataStore.edit { it[deviceIdKey] = newId }
+        return newId
+    }
 
     suspend fun setThemeMode(mode: ThemeMode) = context.dataStore.edit { it[themeKey] = mode.name }
     suspend fun setCallingCards(enabled: Boolean) = context.dataStore.edit { it[callingCardsKey] = enabled }
@@ -87,6 +101,7 @@ class AccountRepository(private val context: Context) {
     suspend fun setKeypadDesign(design: KeypadDesign) = context.dataStore.edit { it[keypadDesignKey] = design.name }
     suspend fun setDefaultDomain(domain: String) = context.dataStore.edit { it[defaultDomainKey] = domain }
     suspend fun setAdsEnabled(enabled: Boolean) = context.dataStore.edit { it[adsEnabledKey] = enabled }
+    suspend fun setDeviceId(id: String) = context.dataStore.edit { it[deviceIdKey] = id }
     suspend fun setProPoints(points: Int) = context.dataStore.edit { it[proPointsKey] = points }
     suspend fun setProExpiration(expiration: Long) = context.dataStore.edit { it[proExpirationKey] = expiration }
     suspend fun setRecordingCounter(counter: Int) = context.dataStore.edit { it[recordingCounterKey] = counter }
