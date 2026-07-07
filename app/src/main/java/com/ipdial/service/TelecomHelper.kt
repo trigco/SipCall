@@ -2,11 +2,15 @@ package com.ipdial.service
 
 import android.content.ComponentName
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.telecom.PhoneAccount
 import android.telecom.PhoneAccountHandle
 import android.telecom.TelecomManager
+import androidx.core.content.ContextCompat
 import com.ipdial.R
 
 object TelecomHelper {
@@ -29,18 +33,19 @@ object TelecomHelper {
         }
         
         val extras = Bundle().apply {
-            putBoolean(PhoneAccount.EXTRA_LOG_SELF_MANAGED_CALLS, false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                putBoolean(PhoneAccount.EXTRA_LOG_SELF_MANAGED_CALLS, false)
+            }
             // Use string literal if constant is missing in current API level context
             putBoolean("android.telecom.extra.SKIP_CALL_LOGGING", true)
         }
-        val phoneAccount = PhoneAccount.builder(handle, context.getString(R.string.app_name))
+        val phoneAccountBuilder = PhoneAccount.builder(handle, context.getString(R.string.app_name))
             .setCapabilities(PhoneAccount.CAPABILITY_SELF_MANAGED)
             .setShortDescription("SIP Calls via IPDial")
             .addSupportedUriScheme("ipdial")
             .setExtras(extras)
-            .build()
             
-        telecomManager.registerPhoneAccount(phoneAccount)
+        telecomManager.registerPhoneAccount(phoneAccountBuilder.build())
     }
 
     fun reportIncomingCall(context: Context, number: String, name: String) {
@@ -68,7 +73,7 @@ object TelecomHelper {
     fun placeOutgoingCall(context: Context, number: String, accountId: String): Boolean {
         // Self-managed ConnectionService is often buggy on Android 8.0/8.1 (API 26/27)
         // on certain devices (like Vivo, Oppo). Bypassing to direct SipEngine for better reliability.
-        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.P) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
             android.util.Log.i("TelecomHelper", "Android version < Pie detected, bypassing TelecomManager for outgoing call")
             return false
         }
@@ -92,8 +97,13 @@ object TelecomHelper {
         }
         
         return try {
-            telecomManager.placeCall(uri, extras)
-            true
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
+                telecomManager.placeCall(uri, extras)
+                true
+            } else {
+                android.util.Log.e("TelecomHelper", "CALL_PHONE permission not granted")
+                false
+            }
         } catch (e: Exception) {
             android.util.Log.e("TelecomHelper", "Error placing call via Telecom", e)
             false
