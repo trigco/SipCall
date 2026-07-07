@@ -3,11 +3,11 @@ package com.ipdial.data.repository
 import android.content.ContentResolver
 import android.content.Context
 import android.database.Cursor
-import android.net.Uri
 import android.provider.ContactsContract
 import com.ipdial.data.local.AppDatabase
 import com.ipdial.data.local.ContactEntity
 import com.ipdial.data.model.Contact
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -65,13 +65,15 @@ class ContactsRepository(private val context: Context) {
                     if (existingContact != null) {
                         if (number.isNotBlank()) {
                             val normalizedNew = number.filter { it.isDigit() }
-                            val alreadyHas = existingContact.numbers.any { it.filter { c -> c.isDigit() } == normalizedNew }
+                            val alreadyHas = existingContact.numbers.any { existingNum -> 
+                                existingNum.filter { char -> char.isDigit() } == normalizedNew 
+                            }
                             if (!alreadyHas) {
                                 contactsMap[id] = existingContact.copy(numbers = existingContact.numbers + number)
                             }
                         }
                     } else if (number.isNotBlank()) {
-                        val photoUri = photoUriStr?.let { Uri.parse(it) }
+                        val photoUri = photoUriStr?.toUri()
                         contactsMap[id] = Contact(id, name, listOf(number), photoUri, isFavorite)
                     }
                 }
