@@ -27,15 +27,28 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                 val dId = repo.getOrCreateDeviceId()
                 val docRef = firestore.collection("users").document(dId)
                 
-                // Automatically register/update user info on start
+                // 1. Initial fetch to sync FROM server if data exists
                 try {
-                    val currentPoints = repo.proPoints.first()
-                    val currentExpiration = repo.proExpiration.first()
-                    pushUpdate(currentPoints, currentExpiration)
+                    val task = docRef.get()
+                    val snapshot = com.google.android.gms.tasks.Tasks.await(task)
+                    if (snapshot.exists()) {
+                        val data = snapshot.data
+                        val sPoints = (data?.get("points") as? Number)?.toInt()
+                        val sExp = (data?.get("expiration") as? Number)?.toLong()
+                        
+                        if (sPoints != null) repo.setProPoints(sPoints)
+                        if (sExp != null) repo.setProExpiration(sExp)
+                    } else {
+                        // Document doesn't exist, register local info
+                        val currentPoints = repo.proPoints.first()
+                        val currentExpiration = repo.proExpiration.first()
+                        pushUpdate(currentPoints, currentExpiration)
+                    }
                 } catch (e: Exception) {
-                    Log.e("FirestorePointsSync", "initial registration failed", e)
+                    Log.e("FirestorePointsSync", "initial sync failed", e)
                 }
 
+                // 2. Continuous listening for changes
                 docRef.addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         Log.e("FirestorePointsSync", "listen error", error)
