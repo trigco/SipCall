@@ -93,17 +93,26 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                     withContext(Dispatchers.Main) { onComplete(false, "Invalid code") }
                     return@launch
                 }
+
+                // 1. Check if I have already claimed a referral
+                val meDoc = firestore.collection("users").document(dId)
+                val meSnapshot = com.google.android.gms.tasks.Tasks.await(meDoc.get())
+                if (meSnapshot.exists() && meSnapshot.contains("referredBy")) {
+                    withContext(Dispatchers.Main) { onComplete(false, "Referral already claimed") }
+                    return@launch
+                }
+
+                // 2. Check if the referral code exists
                 val refDoc = firestore.collection("users").document(refCode)
                 val snapshot = com.google.android.gms.tasks.Tasks.await(refDoc.get())
                 if (!snapshot.exists()) {
                     withContext(Dispatchers.Main) { onComplete(false, "Referral code not found") }
                     return@launch
                 }
-                // Atomically increment both user docs by 50
-                val target = firestore.collection("users").document(refCode)
 
+                // 3. Atomically increment both user docs by 50
                 // award to referrer
-                target.update("points", FieldValue.increment(50))
+                refDoc.update("points", FieldValue.increment(50))
 
                 // award to this user and set referredBy
                 val meUpdate = mapOf(
@@ -114,14 +123,11 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
                 com.google.android.gms.tasks.Tasks.await(
-                    firestore.collection("users").document(dId)
-                        .set(meUpdate, com.google.firebase.firestore.SetOptions.merge())
+                    meDoc.set(meUpdate, com.google.firebase.firestore.SetOptions.merge())
                 )
 
                 // Read fresh values from server
-                val updatedMe = com.google.android.gms.tasks.Tasks.await(
-                    firestore.collection("users").document(dId).get()
-                )
+                val updatedMe = com.google.android.gms.tasks.Tasks.await(meDoc.get())
                 val points = (updatedMe.data?.get("points") as? Number)?.toInt() ?: 0
                 val expiration = (updatedMe.data?.get("expiration") as? Number)?.toLong() ?: 0L
                 repo.setProPoints(points)
