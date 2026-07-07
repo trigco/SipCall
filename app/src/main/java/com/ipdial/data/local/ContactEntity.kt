@@ -3,7 +3,7 @@ package com.ipdial.data.local
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import com.ipdial.data.model.Contact
-import android.net.Uri
+import androidx.core.net.toUri
 
 @Entity(tableName = "contacts")
 data class ContactEntity(
@@ -17,7 +17,7 @@ data class ContactEntity(
         id = id,
         name = name,
         numbers = numbers,
-        photoUri = photoUri?.let { Uri.parse(it) },
+        photoUri = photoUri?.toUri(),
         isFavorite = isFavorite
     )
 
