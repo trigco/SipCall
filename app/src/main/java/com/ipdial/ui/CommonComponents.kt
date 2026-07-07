@@ -79,7 +79,11 @@ fun StartIoBanner(modifier: Modifier = Modifier, vm: SipViewModel? = null) {
 }
 
 @Composable
-fun RegStatusIndicator(accounts: List<SipAccount>, vm: SipViewModel? = null) {
+fun RegStatusIndicator(
+    accounts: List<SipAccount>, 
+    vm: SipViewModel? = null,
+    showAccountInfo: SipAccount? = null
+) {
     val regDotColor = when {
         accounts.any { it.regStatus == RegStatus.REGISTERED }    -> DotGreen
         accounts.any { it.regStatus == RegStatus.REGISTERING }   -> DotAmber
@@ -87,7 +91,8 @@ fun RegStatusIndicator(accounts: List<SipAccount>, vm: SipViewModel? = null) {
         else                                                      -> DotGrey
     }
 
-    val activeAccount = accounts.firstOrNull { it.isEnabled } ?: accounts.firstOrNull()
+    val vmActiveAccount by (vm?.activeAccount?.collectAsState() ?: remember { mutableStateOf(null) })
+    val activeAccount = showAccountInfo ?: vmActiveAccount ?: accounts.firstOrNull { it.isEnabled } ?: accounts.firstOrNull()
     val context = LocalContext.current
 
     Column(

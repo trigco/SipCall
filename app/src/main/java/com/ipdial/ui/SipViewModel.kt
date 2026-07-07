@@ -164,12 +164,13 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             else -> return@launch
         }
         if (proPoints.value >= cost) {
-            repo.setProPoints(proPoints.value - cost)
+            val newPoints = maxOf(0, proPoints.value - cost)
+            repo.setProPoints(newPoints)
             val currentExp = maxOf(proExpiration.value, System.currentTimeMillis())
             val newExp = currentExp + (days * 24 * 60 * 60 * 1000L)
             repo.setProExpiration(newExp)
-            // push update to Firestore
-            try { firestoreSync?.pushUpdate(proPoints.value - cost, newExp) } catch (_: Exception) {}
+            // Atomic update to Firestore
+            try { firestoreSync?.redeemPoints(cost, newExp) } catch (_: Exception) {}
         }
     }
 

@@ -112,6 +112,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             items(accounts) { account ->
                 AccountSettingsRow(
                     account = account,
+                    vm = vm,
                     onEdit = { editingAccount = account; showEditSheet = true },
                     onDelete = { vm.deleteAccount(account.id) },
                     onSetDefault = { vm.setDefaultAccount(account.id) },
@@ -137,6 +138,7 @@ fun AccountsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 @Composable
 fun AccountSettingsRow(
     account: SipAccount,
+    vm: SipViewModel,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     onSetDefault: () -> Unit,
@@ -155,7 +157,7 @@ fun AccountSettingsRow(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            RegStatusIndicator(accounts = listOf(account))
+            RegStatusIndicator(accounts = listOf(account), vm = vm, showAccountInfo = account)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

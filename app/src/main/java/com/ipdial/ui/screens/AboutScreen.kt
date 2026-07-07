@@ -65,11 +65,7 @@ fun AboutScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
         catch (e: Exception) { "1.0" }
     }
 
-    val deviceId = remember(context) {
-        try {
-            android.provider.Settings.Secure.getString(context.contentResolver, android.provider.Settings.Secure.ANDROID_ID) ?: "Unknown"
-        } catch (e: Exception) { "Unknown" }
-    }
+    val deviceId by vm.deviceId.collectAsState()
 
     val appIconBitmap = remember(context) {
         try {

@@ -91,7 +91,8 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
     val context = LocalContext.current
     var code by remember { mutableStateOf("") }
-    val referralCode by vm.deviceId.collectAsState()
+    val fullDeviceId by vm.deviceId.collectAsState()
+    val referralCode = remember(fullDeviceId) { fullDeviceId.take(8) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Referral", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -100,7 +101,7 @@ fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
             OutlinedTextField(
                 value = code,
                 onValueChange = { code = it },
-                label = { Text("Referral Code") },
+                label = { Text("Enter Referral Code") },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -126,8 +127,17 @@ fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
                     }
                     context.startActivity(android.content.Intent.createChooser(intent, "Share referral code"))
                 }) {
-                    Text("Share My Code")
+                    Text("Share Code")
                 }
+            }
+            
+            if (fullDeviceId.isNotEmpty()) {
+                Text(
+                    text = "Your ID: $referralCode",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.align(Alignment.End)
+                )
             }
         }
     }

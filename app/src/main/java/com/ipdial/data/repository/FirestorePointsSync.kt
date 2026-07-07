@@ -82,6 +82,7 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                 val doc = firestore.collection("users").document(dId)
                 val map = mapOf(
                     "deviceId" to dId,
+                    "shortId" to dId.take(8),
                     "name" to deviceName,
                     "points" to points,
                     "expiration" to expiration,
@@ -115,12 +116,21 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                     return@launch
                 }
 
-                // 2. Check if the referral code exists
-                val refDoc = firestore.collection("users").document(refCode)
-                val snapshot = com.google.android.gms.tasks.Tasks.await(refDoc.get())
+                // 2. Check if the referral code exists (Search by full ID first, then by short ID)
+                var refDoc = firestore.collection("users").document(refCode)
+                var snapshot = com.google.android.gms.tasks.Tasks.await(refDoc.get())
+                
                 if (!snapshot.exists()) {
-                    withContext(Dispatchers.Main) { onComplete(false, "Referral code not found") }
-                    return@launch
+                    // Try searching by shortId field
+                    val query = firestore.collection("users").whereEqualTo("shortId", refCode).limit(1).get()
+                    val querySnapshot = com.google.android.gms.tasks.Tasks.await(query)
+                    if (!querySnapshot.isEmpty) {
+                        snapshot = querySnapshot.documents[0]
+                        refDoc = snapshot.reference
+                    } else {
+                        withContext(Dispatchers.Main) { onComplete(false, "Referral code not found") }
+                        return@launch
+                    }
                 }
 
                 // 3. Atomically increment both user docs by 50
@@ -130,8 +140,9 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                 // award to this user and set referredBy
                 val meUpdate = mapOf(
                     "points" to FieldValue.increment(50),
-                    "referredBy" to refCode,
+                    "referredBy" to snapshot.id, // Store the full ID of the referrer
                     "deviceId" to dId,
+                    "shortId" to dId.take(8),
                     "name" to deviceName,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -150,6 +161,22 @@ class FirestorePointsSync(private val repo: AccountRepository) {
             } catch (e: Exception) {
                 Log.e("FirestorePointsSync", "claimReferral failed", e)
                 withContext(Dispatchers.Main) { onComplete(false, "Error: ${e.message}") }
+            }
+        }
+    }
+
+    fun redeemPoints(cost: Int, newExpiration: Long) {
+        scope.launch {
+            try {
+                val dId = repo.getOrCreateDeviceId()
+                val doc = firestore.collection("users").document(dId)
+                doc.update(
+                    "points", FieldValue.increment(-cost.toLong()),
+                    "expiration", newExpiration,
+                    "updatedAt", FieldValue.serverTimestamp()
+                )
+            } catch (e: Exception) {
+                Log.e("FirestorePointsSync", "redeemPoints failed", e)
             }
         }
     }
