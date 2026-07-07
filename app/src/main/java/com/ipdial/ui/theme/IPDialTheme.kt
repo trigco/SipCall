@@ -52,13 +52,34 @@ private val DarkColors = darkColorScheme(
     onError            = Color(0xFF680022),
 )
 
+// Glassmorphism inspired: cool blues and high translucency palette
+private val GlassColors = lightColorScheme(
+    primary            = Color(0xFF4A90E2),
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFFD1E3F8),
+    onPrimaryContainer = Color(0xFF003366),
+    background         = Color(0xFFF0F4F8),
+    onBackground       = Color(0xFF1A1C1E),
+    surface            = Color(0xFFFFFFFF),
+    onSurface          = Color(0xFF1A1C1E),
+    surfaceVariant     = Color(0xFFE1E8ED),
+    onSurfaceVariant   = Color(0xFF44474E),
+    outline            = Color(0xFF74777F),
+)
+
 @Composable
 fun IPDialTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: com.ipdial.data.model.ThemeMode = com.ipdial.data.model.ThemeMode.System,
     fontMultiplier: Float = 1.0f,
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) DarkColors else LightColors
+    val systemDark = isSystemInDarkTheme()
+    val colors = when (themeMode) {
+        com.ipdial.data.model.ThemeMode.Light -> LightColors
+        com.ipdial.data.model.ThemeMode.Dark -> DarkColors
+        com.ipdial.data.model.ThemeMode.Glass -> GlassColors
+        else -> if (systemDark) DarkColors else LightColors
+    }
     
     val scaledTypography = if (fontMultiplier != 1.0f) {
         Typography(

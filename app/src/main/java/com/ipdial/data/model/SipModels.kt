@@ -84,6 +84,6 @@ enum class CallState {
 
 enum class KeypadDesign { Grid, Rounded }
 
-enum class ThemeMode { System, Light, Dark }
+enum class ThemeMode { System, Light, Dark, Glass }
 
 enum class AudioDeviceMode { EARPIECE, SPEAKER, BLUETOOTH }

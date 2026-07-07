@@ -92,6 +92,33 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     var showCodecDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showAppIconDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
+
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Select Theme") },
+            text = {
+                Column {
+                    ThemeMode.entries.forEach { mode ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                vm.setThemeMode(context, mode)
+                                showThemeDialog = false
+                            }.padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            val themeMode by vm.themeMode.collectAsState()
+                            RadioButton(selected = themeMode == mode, onClick = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(mode.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     if (showFontSizeDialog) {
         AlertDialog(
@@ -424,19 +451,14 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                 val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
                 SettingsRow(
                     icon = Icons.Default.DisplaySettings,
-                    title = "Dark Mode",
+                    title = "App Theme",
                     subtitle = when(themeMode) {
-                        ThemeMode.Dark -> "On"
-                        ThemeMode.Light -> "Off"
+                        ThemeMode.Dark -> "Dark"
+                        ThemeMode.Light -> "Light"
+                        ThemeMode.Glass -> "Glass"
                         ThemeMode.System -> "System (${if(systemDark) "Dark" else "Light"})"
                     },
-                    trailing = { 
-                        Switch(
-                            checked = themeMode == ThemeMode.Dark, 
-                            onCheckedChange = { vm.setThemeMode(context, if (it) ThemeMode.Dark else ThemeMode.Light) } 
-                        ) 
-                    },
-                    onClick = { vm.setThemeMode(context, if (themeMode == ThemeMode.Dark) ThemeMode.Light else ThemeMode.Dark) }
+                    onClick = { showThemeDialog = true }
                 )
             }
             

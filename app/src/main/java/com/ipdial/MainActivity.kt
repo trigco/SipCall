@@ -95,7 +95,6 @@ import androidx.navigation.compose.rememberNavController
 import com.ipdial.data.model.CallDirection
 import com.ipdial.data.model.CallSession
 import com.ipdial.data.model.CallState
-import com.ipdial.data.model.ThemeMode
 import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.screens.AboutScreen
 import com.ipdial.ui.screens.AccountsScreen
@@ -164,13 +163,6 @@ class MainActivity : ComponentActivity() {
             val vm: SipViewModel = viewModel()
             val themeMode by vm.themeMode.collectAsState()
             val fontMultiplier by vm.fontSizeMultiplier.collectAsState()
-            val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
-
-            val darkTheme = when (themeMode) {
-                ThemeMode.Dark -> true
-                ThemeMode.Light -> false
-                else -> systemDark
-            }
 
             // Keep screen on when there's an active call
             val callSession by vm.callSession.collectAsState()
@@ -191,7 +183,7 @@ class MainActivity : ComponentActivity() {
             }
 
             IPDialTheme(
-                darkTheme = darkTheme,
+                themeMode = themeMode,
                 fontMultiplier = fontMultiplier
             ) {
                 IPDialApp()
