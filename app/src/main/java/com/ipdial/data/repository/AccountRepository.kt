@@ -100,6 +100,7 @@ class AccountRepository(private val context: Context) {
     suspend fun setAppIconAlias(alias: String) = context.dataStore.edit { it[appIconKey] = alias }
     suspend fun setKeypadDesign(design: KeypadDesign) = context.dataStore.edit { it[keypadDesignKey] = design.name }
     suspend fun setDefaultDomain(domain: String) = context.dataStore.edit { it[defaultDomainKey] = domain }
+    suspend fun setLastDialedNumber(number: String) = context.dataStore.edit { it[lastDialedKey] = number }
     suspend fun setAdsEnabled(enabled: Boolean) = context.dataStore.edit { it[adsEnabledKey] = enabled }
     suspend fun setDeviceId(id: String) = context.dataStore.edit { it[deviceIdKey] = id }
     suspend fun setProPoints(points: Int) = context.dataStore.edit { it[proPointsKey] = points }

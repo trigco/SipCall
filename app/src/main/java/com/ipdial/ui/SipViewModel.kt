@@ -642,6 +642,11 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
          android.util.Log.d("SipViewModel", "Direct Dialing: $finalUri")
 
+         // Save as last dialed (the raw number)
+         viewModelScope.launch {
+             repo.setLastDialedNumber(rawInput)
+         }
+
          if (callSession.value == null) {
              // Default to Bluetooth if available
              if (_hasBluetoothDevice.value) {
