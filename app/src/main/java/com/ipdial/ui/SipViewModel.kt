@@ -185,8 +185,8 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
             viewModelScope.launch {
                 val newPoints = proPoints.value + 1
                 repo.setProPoints(newPoints)
-                // push update to Firestore
-                try { firestoreSync?.pushUpdate(newPoints, proExpiration.value) } catch (_: Exception) {}
+                // Atomic increment in Firestore instead of overwriting with local total
+                try { firestoreSync?.incrementPoints(1) } catch (_: Exception) {}
                 onReward()
                 _isLoadingAd.value = false
             }
@@ -203,23 +203,21 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 rewardedAd.showAd()
             }
             override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                // Fallback to interstitial
-                triggerInterstitialAd(context) {
-                    grantReward()
+                // Try fallback to interstitial but DON'T grant reward automatically
+                triggerInterstitialAd(context) { success ->
+                    if (success) grantReward()
+                    else _isLoadingAd.value = false
                 }
             }
         })
     }
 
-    fun triggerInterstitialAd(context: Context, onComplete: (() -> Unit)? = null) {
+    fun triggerInterstitialAd(context: Context, onComplete: ((Boolean) -> Unit)? = null) {
         if (isPro.value) {
-            onComplete?.invoke()
+            onComplete?.invoke(true)
             return
         }
         if (_isLoadingAd.value && onComplete != null) {
-            // Already loading, don't trigger another one if we have a callback
-            // But we might want to still allow it if called from a different context?
-            // For safety, let's just use the same lock.
             return
         }
         _isLoadingAd.value = true
@@ -231,18 +229,18 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                     override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
                     override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) { 
                         _isLoadingAd.value = false
-                        onComplete?.invoke() 
+                        onComplete?.invoke(false) 
                     }
                     override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
                     override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) { 
                         _isLoadingAd.value = false
-                        onComplete?.invoke() 
+                        onComplete?.invoke(true) 
                     }
                 })
             }
             override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
                 _isLoadingAd.value = false
-                onComplete?.invoke()
+                onComplete?.invoke(false)
             }
         })
     }
@@ -271,7 +269,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         val callback = _adGateCallback.value
         _adGateCallback.value = null
         if (callback != null) {
-            triggerInterstitialAd(context) {
+            triggerInterstitialAd(context) { _ ->
                 callback()
             }
         }
@@ -622,16 +620,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                  base
              }
          } else {
-             var num = cleanedInput.removePrefix("sip:")
-
-             // BD automatic handling: 017... (11 digits) or 17... (10 digits)
-             if (num.all { it.isDigit() }) {
-                 if (num.length == 11 && num.startsWith("0")) {
-                     num = "+880${num.drop(1)}"
-                 } else if (num.length == 10 && num.startsWith("1")) {
-                     num = "+880$num"
-                 }
-             }
+             val num = cleanedInput.removePrefix("sip:")
 
              val host = if (account.port != null && account.port > 0 && !account.domain.contains(":")) {
                  "${account.domain}:${account.port}"

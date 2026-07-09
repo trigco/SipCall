@@ -45,6 +45,8 @@
     <application
         android:name=".IPDialApplication"
         android:allowBackup="true"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:extractNativeLibs="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -169,6 +171,10 @@
             android:exported="false"
             android:foregroundServiceType="phoneCall|dataSync"
             android:stopWithTask="false" />
+
+        <meta-data
+            android:name="com.startapp.sdk.APPLICATION_ID"
+            android:value="205857982" />
 
         <service
             android:name=".service.SipConnectionService"
