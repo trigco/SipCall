@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 // ...existing imports...
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.SipViewModel
+import com.ipdial.ui.theme.glass
 import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -92,8 +93,17 @@ fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
     val context = LocalContext.current
     var code by remember { mutableStateOf("") }
     val fullDeviceId by vm.deviceId.collectAsState()
-    val referralCode = remember(fullDeviceId) { fullDeviceId.take(8) }
-    Card(modifier = Modifier.fillMaxWidth()) {
+    val referralCode = remember(fullDeviceId) { fullDeviceId.take(6) }
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isGlass) Modifier.glass() else Modifier),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Referral", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Get 50 points per install. Share your code or enter one to claim.")
@@ -106,27 +116,35 @@ fun ReferralCard(vm: com.ipdial.ui.SipViewModel) {
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                Button(onClick = {
-                    if (code.isNotBlank()) {
-                        vm.claimReferral(code) { success, msg ->
-                            try {
-                                android.widget.Toast.makeText(context.applicationContext, msg, android.widget.Toast.LENGTH_SHORT).show()
-                            } catch (_: Exception) {}
+                Button(
+                    onClick = {
+                        if (code.isNotBlank()) {
+                            vm.claimReferral(code) { success, msg ->
+                                try {
+                                    android.widget.Toast.makeText(context.applicationContext, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                } catch (_: Exception) {}
+                            }
                         }
-                    }
-                }, modifier = Modifier.weight(1f)) {
+                    }, 
+                    modifier = Modifier.weight(1f).then(if (isGlass) Modifier.glass(ButtonDefaults.shape) else Modifier),
+                    colors = if (isGlass) ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White) else ButtonDefaults.buttonColors()
+                ) {
                     Text("Apply Code")
                 }
 
-                Button(onClick = {
-                    // share referral code via system share
-                    val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Join IPDial & get free points")
-                        putExtra(android.content.Intent.EXTRA_TEXT, "Use my referral code: $referralCode to get 50 points in IPDial. Download here: https://github.com/nazimunaeem/IPDial/releases")
-                    }
-                    context.startActivity(android.content.Intent.createChooser(intent, "Share referral code"))
-                }) {
+                Button(
+                    onClick = {
+                        // share referral code via system share
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "Join IPDial & get free points")
+                            putExtra(android.content.Intent.EXTRA_TEXT, "Use my referral code: $referralCode to get 50 points in IPDial. Download here: https://github.com/nazimunaeem/IPDial/releases")
+                        }
+                        context.startActivity(android.content.Intent.createChooser(intent, "Share referral code"))
+                    },
+                    modifier = Modifier.then(if (isGlass) Modifier.glass(ButtonDefaults.shape) else Modifier),
+                    colors = if (isGlass) ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White) else ButtonDefaults.buttonColors()
+                ) {
                     Text("Share Code")
                 }
             }
@@ -151,13 +169,16 @@ fun ProStatusCard(isPro: Boolean, expiration: Long) {
     } else 0
 
     val proAccent = Color(0xFFBC4749)
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isGlass) Modifier.glass() else Modifier),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPro) proAccent.copy(alpha = 0.1f) else MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (isPro) proAccent.copy(alpha = 0.1f) else (if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant)
         ),
-        border = if (isPro) androidx.compose.foundation.BorderStroke(1.dp, proAccent.copy(alpha = 0.5f)) else null
+        border = if (isPro) androidx.compose.foundation.BorderStroke(1.dp, proAccent.copy(alpha = 0.5f)) else (if (isGlass) null else null)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -190,9 +211,14 @@ fun ProStatusCard(isPro: Boolean, expiration: Long) {
 
 @Composable
 fun PointsBalanceCard(points: Int, isLoading: Boolean, onWatchAd: () -> Unit) {
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isGlass) Modifier.glass() else Modifier),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.secondaryContainer
+        )
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -211,7 +237,9 @@ fun PointsBalanceCard(points: Int, isLoading: Boolean, onWatchAd: () -> Unit) {
                 onClick = onWatchAd,
                 enabled = !isLoading,
                 shape = RoundedCornerShape(8.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.then(if (isGlass) Modifier.glass(RoundedCornerShape(8.dp)) else Modifier),
+                colors = if (isGlass) ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.White) else ButtonDefaults.buttonColors()
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)

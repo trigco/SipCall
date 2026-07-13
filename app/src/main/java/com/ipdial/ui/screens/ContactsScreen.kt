@@ -43,6 +43,10 @@ import com.ipdial.ui.AccountSelectionDialog
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.NumberPickerDialog
 import com.ipdial.ui.SipViewModel
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.ipdial.ui.theme.glass
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -160,12 +164,20 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 @Composable
 fun ContactItem(contact: Contact, onNumberClick: (String) -> Unit, onContactClick: () -> Unit) {
     val context = LocalContext.current
-    Row(
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
+    Surface(
+        color = Color.Transparent,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp, horizontal = 16.dp),
-        verticalAlignment = Alignment.Top
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .then(if (isGlass) Modifier.glass(RoundedCornerShape(12.dp)) else Modifier)
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp, horizontal = 12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
         Box(
             modifier = Modifier
                 .padding(top = 4.dp)
@@ -218,6 +230,7 @@ fun ContactItem(contact: Contact, onNumberClick: (String) -> Unit, onContactClic
                     )
                 }
             }
+        }
         }
     }
 }

@@ -86,7 +86,20 @@ class AccountRepository(private val context: Context) {
         val current = context.dataStore.data.map { it[deviceIdKey] }.first()
         if (!current.isNullOrBlank()) return current
         
-        val newId = UUID.randomUUID().toString()
+        // Try to get ANDROID_ID for better persistence across updates/reinstalls
+        val androidId = android.provider.Settings.Secure.getString(
+            context.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID
+        )
+        
+        // Use ANDROID_ID if available, otherwise fallback to UUID
+        // "9774d56d682e549c" is a common bug ID on some devices to avoid
+        val newId = if (!androidId.isNullOrBlank() && androidId != "9774d56d682e549c") {
+            androidId
+        } else {
+            UUID.randomUUID().toString()
+        }
+
         context.dataStore.edit { it[deviceIdKey] = newId }
         return newId
     }

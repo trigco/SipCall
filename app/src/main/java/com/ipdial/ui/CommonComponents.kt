@@ -51,6 +51,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.ipdial.data.model.RegStatus
 import com.ipdial.data.model.SipAccount
 import com.ipdial.ui.screens.clickableWithRipple
+import com.ipdial.ui.theme.glass
 import com.startapp.sdk.ads.banner.Banner
 import kotlinx.coroutines.delay
 
@@ -136,11 +137,19 @@ fun RegStatusIndicator(
         if (activeAccount != null && (activeAccount.domain == "sip.amarip.net" || activeAccount.domain == "103.170.231.10") && vm != null) {
             val balanceMap by vm.balances.collectAsState()
             val balance = balanceMap[activeAccount.id]
+            val isPro by vm.isPro.collectAsState()
             
             var isRevealing by remember { mutableStateOf(false) }
             val offsetX = remember { Animatable(-10f) }
 
-            LaunchedEffect(isRevealing) {
+            // Always show balance for Pro users or if specifically revealing
+            val showBalance = isPro || isRevealing
+
+            LaunchedEffect(isRevealing, isPro) {
+                if (isPro) {
+                    vm?.fetchBalance(activeAccount, context)
+                    if (!isRevealing) offsetX.snapTo(20f)
+                }
                 if (isRevealing) {
                     offsetX.snapTo(0f)
                     offsetX.animateTo(20f, animationSpec = tween(600))
@@ -155,12 +164,17 @@ fun RegStatusIndicator(
                     .clip(RoundedCornerShape(4.dp))
                     .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f))
                     .clickable {
-                        if (isRevealing) {
-                            isRevealing = false
-                            vm?.dismissAd()
-                        } else {
+                        if (isPro) {
+                            // Pro users just refresh on click
                             vm?.fetchBalance(activeAccount, context)
-                            isRevealing = true
+                        } else {
+                            if (isRevealing) {
+                                isRevealing = false
+                                vm?.dismissAd()
+                            } else {
+                                vm?.fetchBalance(activeAccount, context)
+                                isRevealing = true
+                            }
                         }
                     }
                     .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -168,7 +182,7 @@ fun RegStatusIndicator(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center
             ) {
-                if (isRevealing) {
+                if (showBalance) {
                     val cleanBalance = (balance ?: "...").replace("BDT", "").trim()
                     Text(
                         text = cleanBalance,
@@ -179,6 +193,7 @@ fun RegStatusIndicator(
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1
                     )
+                    Spacer(Modifier.width(3.dp))
                     Text(
                         text = "৳",
                         fontSize = 10.sp,
@@ -205,15 +220,18 @@ fun IPDialTopBar(
     vm: SipViewModel? = null,
     onOpenDrawer: () -> Unit
 ) {
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
+    val containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface
     val isPro = vm?.isPro?.collectAsState()?.value ?: false
     val appName = if (isPro) "IPDialPro" else "IPDial"
-    val appNameColor = if (isPro) ColorPro else MaterialTheme.colorScheme.primary
+    val appNameColor = if (isPro) ColorPro else MaterialTheme.colorScheme.onSurface
     val themeColor = MaterialTheme.colorScheme.primary
-    val containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
 
     Surface(
         color = containerColor,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isGlass) Modifier.glass(RoundedCornerShape(0.dp)) else Modifier),
         shadowElevation = 0.dp
     ) {
         Box(
@@ -234,9 +252,11 @@ fun IPDialTopBar(
 
             // Center: App Name with soft background
             Surface(
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                color = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
                 shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.align(Alignment.Center)
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .then(if (isGlass) Modifier.glass(RoundedCornerShape(12.dp)) else Modifier)
             ) {
                 Text(
                     text = appName,

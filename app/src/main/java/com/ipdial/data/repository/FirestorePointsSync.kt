@@ -75,6 +75,25 @@ class FirestorePointsSync(private val repo: AccountRepository) {
         }
     }
 
+    fun incrementPoints(amount: Int) {
+        scope.launch {
+            try {
+                val dId = repo.getOrCreateDeviceId()
+                val doc = firestore.collection("users").document(dId)
+                doc.update(
+                    "points", FieldValue.increment(amount.toLong()),
+                    "updatedAt", FieldValue.serverTimestamp()
+                )
+            } catch (e: Exception) {
+                // If update fails because doc doesn't exist, push full update
+                Log.w("FirestorePointsSync", "incrementPoints failed, trying pushUpdate", e)
+                val currentPoints = repo.proPoints.first()
+                val currentExpiration = repo.proExpiration.first()
+                pushUpdate(currentPoints, currentExpiration)
+            }
+        }
+    }
+
     fun pushUpdate(points: Int, expiration: Long) {
         scope.launch {
             try {
@@ -82,7 +101,7 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                 val doc = firestore.collection("users").document(dId)
                 val map = mapOf(
                     "deviceId" to dId,
-                    "shortId" to dId.take(8),
+                    "shortId" to dId.take(6),
                     "name" to deviceName,
                     "points" to points,
                     "expiration" to expiration,
@@ -133,22 +152,28 @@ class FirestorePointsSync(private val repo: AccountRepository) {
                     }
                 }
 
-                // 3. Atomically increment both user docs by 50
+                // 3. Atomically increment both user docs by 50 using a batch
+                val batch = firestore.batch()
+                
                 // award to referrer
-                refDoc.update("points", FieldValue.increment(50))
+                val refUpdate = mapOf(
+                    "points" to FieldValue.increment(50),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                batch.update(refDoc, refUpdate)
 
                 // award to this user and set referredBy
                 val meUpdate = mapOf(
                     "points" to FieldValue.increment(50),
                     "referredBy" to snapshot.id, // Store the full ID of the referrer
                     "deviceId" to dId,
-                    "shortId" to dId.take(8),
+                    "shortId" to dId.take(6),
                     "name" to deviceName,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
-                com.google.android.gms.tasks.Tasks.await(
-                    meDoc.set(meUpdate, com.google.firebase.firestore.SetOptions.merge())
-                )
+                batch.set(meDoc, meUpdate, com.google.firebase.firestore.SetOptions.merge())
+
+                com.google.android.gms.tasks.Tasks.await(batch.commit())
 
                 // Read fresh values from server
                 val updatedMe = com.google.android.gms.tasks.Tasks.await(meDoc.get())

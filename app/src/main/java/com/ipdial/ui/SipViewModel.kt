@@ -177,12 +177,14 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     fun watchRewardedAd(context: Context, onReward: () -> Unit) {
         if (_isLoadingAd.value) return
         _isLoadingAd.value = true
+        android.util.Log.d("SipViewModel", "Starting rewarded ad flow")
 
         val rewardedAd = com.startapp.sdk.adsbase.StartAppAd(context)
         
         // Define common success logic
         val grantReward = {
             viewModelScope.launch {
+                android.util.Log.d("SipViewModel", "Granting 1 point reward")
                 val newPoints = proPoints.value + 1
                 repo.setProPoints(newPoints)
                 // Atomic increment in Firestore instead of overwriting with local total
@@ -194,17 +196,40 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
         rewardedAd.setVideoListener(object : com.startapp.sdk.adsbase.adlisteners.VideoListener {
             override fun onVideoCompleted() {
+                android.util.Log.d("SipViewModel", "Rewarded video completed")
                 grantReward()
             }
         })
 
         rewardedAd.loadAd(com.startapp.sdk.adsbase.StartAppAd.AdMode.REWARDED_VIDEO, object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
             override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
-                rewardedAd.showAd()
+                android.util.Log.d("SipViewModel", "Rewarded ad received, showing...")
+                val showed = rewardedAd.showAd(object : com.startapp.sdk.adsbase.adlisteners.AdDisplayListener {
+                    override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
+                    override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {
+                        android.util.Log.w("SipViewModel", "Rewarded ad not displayed, trying interstitial fallback")
+                        triggerInterstitialAd(context, ignorePro = true) { success ->
+                            if (success) grantReward()
+                            else _isLoadingAd.value = false
+                        }
+                    }
+                    override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
+                    override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) {
+                        // For non-video rewarded ads (if any), handle completion here if VideoListener isn't triggered
+                    }
+                })
+                if (!showed) {
+                    android.util.Log.w("SipViewModel", "showAd() returned false for rewarded, trying interstitial fallback")
+                    triggerInterstitialAd(context, ignorePro = true) { success ->
+                        if (success) grantReward()
+                        else _isLoadingAd.value = false
+                    }
+                }
             }
             override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
-                // Try fallback to interstitial but DON'T grant reward automatically
-                triggerInterstitialAd(context) { success ->
+                android.util.Log.w("SipViewModel", "Failed to receive rewarded ad, trying interstitial fallback")
+                // Allow triggerInterstitialAd to run by not being blocked by _isLoadingAd check (which we remove below)
+                triggerInterstitialAd(context, ignorePro = true) { success ->
                     if (success) grantReward()
                     else _isLoadingAd.value = false
                 }
@@ -212,33 +237,36 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         })
     }
 
-    fun triggerInterstitialAd(context: Context, onComplete: ((Boolean) -> Unit)? = null) {
-        if (isPro.value) {
+    fun triggerInterstitialAd(context: Context, ignorePro: Boolean = false, onComplete: ((Boolean) -> Unit)? = null) {
+        if (isPro.value && !ignorePro) {
             onComplete?.invoke(true)
             return
         }
-        if (_isLoadingAd.value && onComplete != null) {
-            return
-        }
+        
         _isLoadingAd.value = true
 
         val startAppAd = com.startapp.sdk.adsbase.StartAppAd(context)
         startAppAd.loadAd(object : com.startapp.sdk.adsbase.adlisteners.AdEventListener {
             override fun onReceiveAd(ad: com.startapp.sdk.adsbase.Ad) {
                 startAppAd.showAd(object : com.startapp.sdk.adsbase.adlisteners.AdDisplayListener {
-                    override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {}
+                    override fun adDisplayed(ad: com.startapp.sdk.adsbase.Ad?) {
+                        android.util.Log.d("SipViewModel", "Interstitial ad displayed")
+                    }
                     override fun adNotDisplayed(ad: com.startapp.sdk.adsbase.Ad?) { 
+                        android.util.Log.w("SipViewModel", "Interstitial ad not displayed")
                         _isLoadingAd.value = false
                         onComplete?.invoke(false) 
                     }
                     override fun adClicked(ad: com.startapp.sdk.adsbase.Ad?) {}
                     override fun adHidden(ad: com.startapp.sdk.adsbase.Ad?) { 
+                        android.util.Log.d("SipViewModel", "Interstitial ad hidden")
                         _isLoadingAd.value = false
                         onComplete?.invoke(true) 
                     }
                 })
             }
             override fun onFailedToReceiveAd(ad: com.startapp.sdk.adsbase.Ad?) {
+                android.util.Log.e("SipViewModel", "Failed to receive interstitial ad")
                 _isLoadingAd.value = false
                 onComplete?.invoke(false)
             }
@@ -733,6 +761,9 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
      }
 
      fun setAudioDevice(mode: AudioDeviceMode) {
+         // Keep SipEngine's state in sync for UI and routing logic
+         com.ipdial.service.SipEngine.setSpeaker(mode == AudioDeviceMode.SPEAKER)
+         
          viewModelScope.launch {
              try {
                  _audioDeviceMode.value = mode

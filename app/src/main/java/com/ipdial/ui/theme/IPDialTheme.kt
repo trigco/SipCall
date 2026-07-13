@@ -1,31 +1,44 @@
 package com.ipdial.ui.theme
 
+import android.os.Build
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposeRenderEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.unit.dp
+import com.ipdial.data.model.ThemeMode
+
+enum class GlassMode { None, Obsidian, Quartz }
+val LocalGlassMode = staticCompositionLocalOf { GlassMode.None }
 
 // ── Palette ─────────────────────────────────────────────────────────────────
-// Lifted from the phone app screenshots: muted sage background, deep forest green accents
-
-val SageBackground   = Color(0xFFEAEFE9)  // Screen background
-val ForestGreen      = Color(0xFF1E6B3C)  // Primary action (Call button)
-val MintSurface      = Color(0xFFF2F7F1)  // Card/surface
-val DarkForest       = Color(0xFF0D3D20)  // Primary container / on-primary
-val EndRed           = Color(0xFFD32F2F)  // Hang up
-val GrayText         = Color(0xFF5A6B5A)  // Secondary text
-val OutlineGreen     = Color(0xFFB0C9B0)  // Borders
-val OnSageText       = Color(0xFF1A2E1A)  // Primary text on sage bg
+val SageBackground   = Color(0xFFEAEFE9)
+val ForestGreen      = Color(0xFF1E6B3C)
+val MintSurface      = Color(0xFFF2F7F1)
+val DarkForest       = Color(0xFF0D3D20)
+val EndRed           = Color(0xFFD32F2F)
+val GrayText         = Color(0xFF5A6B5A)
+val OutlineGreen     = Color(0xFFB0C9B0)
+val OnSageText       = Color(0xFF1A2E1A)
 
 private val LightColors = lightColorScheme(
     primary            = ForestGreen,
     onPrimary          = Color.White,
     primaryContainer   = Color(0xFFB7DFB9),
     onPrimaryContainer = DarkForest,
-    secondary          = Color(0xFF4E7C54),
-    onSecondary        = Color.White,
-    secondaryContainer = Color(0xFFCEEDD0),
-    onSecondaryContainer = Color(0xFF0A3315),
     background         = SageBackground,
     onBackground       = OnSageText,
     surface            = MintSurface,
@@ -52,33 +65,77 @@ private val DarkColors = darkColorScheme(
     onError            = Color(0xFF680022),
 )
 
-// Glassmorphism inspired: cool blues and high translucency palette
-private val GlassColors = lightColorScheme(
-    primary            = Color(0xFF4A90E2),
+// Quartz: Apple-style Light Glass. 
+private val QuartzColors = lightColorScheme(
+    primary            = Color(0xFF007AFF), // Apple Blue
     onPrimary          = Color.White,
-    primaryContainer   = Color(0xFFD1E3F8),
-    onPrimaryContainer = Color(0xFF003366),
-    background         = Color(0xFFF0F4F8),
-    onBackground       = Color(0xFF1A1C1E),
-    surface            = Color(0xFFFFFFFF),
-    onSurface          = Color(0xFF1A1C1E),
-    surfaceVariant     = Color(0xFFE1E8ED),
-    onSurfaceVariant   = Color(0xFF44474E),
-    outline            = Color(0xFF74777F),
+    primaryContainer   = Color(0xFFF2F2F7),
+    onPrimaryContainer = Color.Black,
+    background         = Color.Transparent,
+    onBackground       = Color.Black,
+    surface            = Color(0xCCFFFFFF), 
+    onSurface          = Color.Black,
+    surfaceVariant     = Color(0xFFE5E5EA),
+    onSurfaceVariant   = Color(0xFF3C3C43),
+    outline            = Color(0x33000000),
 )
+
+// Obsidian: Apple-style Dark Glass.
+private val ObsidianColors = darkColorScheme(
+    primary            = Color(0xFF34C759), // Apple Green
+    onPrimary          = Color.White,
+    primaryContainer   = Color(0xFF1C1C1E),
+    onPrimaryContainer = Color.White,
+    background         = Color.Transparent,
+    onBackground       = Color.White,
+    surface            = Color(0xCC1C1C1E), 
+    onSurface          = Color.White,
+    surfaceVariant     = Color(0xFF2C2C2E),
+    onSurfaceVariant   = Color(0xFFEBEBF5),
+    outline            = Color(0x33FFFFFF),
+)
+
+/**
+ * Applies Apple-style Glassmorphism (Translucency + Border)
+ */
+@Composable
+fun Modifier.glass(
+    shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
+    borderWidth: androidx.compose.ui.unit.Dp = 1.dp,
+    alpha: Float = 0.85f
+): Modifier {
+    val mode = LocalGlassMode.current
+    if (mode == GlassMode.None) return this
+    
+    val borderColor = if (mode == GlassMode.Quartz) Color.Black.copy(alpha = 0.1f) else Color.White.copy(alpha = 0.15f)
+    val bgColor = if (mode == GlassMode.Quartz) Color.White.copy(alpha = alpha) else Color(0xFF1C1C1E).copy(alpha = alpha)
+
+    return this
+        .clip(shape)
+        .background(bgColor)
+        .border(borderWidth, borderColor, shape)
+}
 
 @Composable
 fun IPDialTheme(
-    themeMode: com.ipdial.data.model.ThemeMode = com.ipdial.data.model.ThemeMode.System,
+    themeMode: ThemeMode = ThemeMode.System,
     fontMultiplier: Float = 1.0f,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()
+    
     val colors = when (themeMode) {
-        com.ipdial.data.model.ThemeMode.Light -> LightColors
-        com.ipdial.data.model.ThemeMode.Dark -> DarkColors
-        com.ipdial.data.model.ThemeMode.Glass -> GlassColors
+        ThemeMode.Light -> LightColors
+        ThemeMode.Dark -> DarkColors
+        ThemeMode.Quartz -> QuartzColors
+        ThemeMode.Obsidian -> ObsidianColors
         else -> if (systemDark) DarkColors else LightColors
+    }
+    
+    val glassMode = when (themeMode) {
+        ThemeMode.Quartz -> GlassMode.Quartz
+        ThemeMode.Obsidian -> GlassMode.Obsidian
+        else -> GlassMode.None
     }
     
     val scaledTypography = if (fontMultiplier != 1.0f) {
@@ -96,10 +153,83 @@ fun IPDialTheme(
         )
     } else IPDialTypography
 
-    MaterialTheme(
-        colorScheme = colors,
-        typography  = scaledTypography,
-        shapes      = IPDialShapes,
-        content     = content
-    )
+    CompositionLocalProvider(LocalGlassMode provides glassMode) {
+        MaterialTheme(
+            colorScheme = colors,
+            typography  = scaledTypography,
+            shapes      = IPDialShapes
+        ) {
+            if (glassMode != GlassMode.None) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    // Redesigned vibrant whole-screen gradient background
+                    val vibrancyBrush = if (glassMode == GlassMode.Obsidian) {
+                        Brush.linearGradient(
+                            0f to Color(0xFF0D0D0D),
+                            0.5f to Color(0xFF1A1A1A),
+                            1f to Color(0xFF0D0D0D)
+                        )
+                    } else {
+                        Brush.linearGradient(
+                            0f to Color(0xFFF2F2F7),
+                            0.5f to Color(0xFFE5E5EA),
+                            1f to Color(0xFFF2F2F7)
+                        )
+                    }
+                    Box(modifier = Modifier.fillMaxSize().background(vibrancyBrush))
+                    
+                    // Soft colorful "Vibrancy" overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = if (glassMode == GlassMode.Obsidian) {
+                                        listOf(Color(0xFF34C759).copy(alpha = 0.15f), Color.Transparent)
+                                    } else {
+                                        listOf(Color(0xFF007AFF).copy(alpha = 0.1f), Color.Transparent)
+                                    },
+                                    center = androidx.compose.ui.geometry.Offset(0f, 0f),
+                                    radius = 1000f
+                                )
+                            )
+                    )
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.radialGradient(
+                                    colors = if (glassMode == GlassMode.Obsidian) {
+                                        listOf(Color(0xFF5856D6).copy(alpha = 0.15f), Color.Transparent)
+                                    } else {
+                                        listOf(Color(0xFFFF2D55).copy(alpha = 0.1f), Color.Transparent)
+                                    },
+                                    center = androidx.compose.ui.geometry.Offset(1000f, 2000f),
+                                    radius = 1200f
+                                )
+                            )
+                    )
+                    
+                    // Grain/Texture overlay
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = if (glassMode == GlassMode.Obsidian) {
+                                        listOf(Color(0x33FFFFFF), Color.Transparent, Color(0x33000000))
+                                    } else {
+                                        listOf(Color(0x1A000000), Color.Transparent, Color(0x1A000000))
+                                    }
+                                )
+                            )
+                    )
+
+                    content()
+                }
+            } else {
+                content()
+            }
+        }
+    }
 }

@@ -75,6 +75,7 @@ import com.ipdial.ui.AccountSelectionDialog
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.NumberPickerDialog
 import com.ipdial.ui.SipViewModel
+import com.ipdial.ui.theme.glass
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -339,12 +340,14 @@ fun SearchBarRow(
     query: String,
     onQueryChange: (String) -> Unit
 ) {
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 4.dp),
+            .padding(horizontal = 12.dp, vertical = 4.dp)
+            .then(if (isGlass) Modifier.glass(RoundedCornerShape(24.dp)) else Modifier),
         shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Row(
             modifier = Modifier
@@ -402,10 +405,14 @@ fun CallLogRow(
     val callerName = contact?.name ?: cleanDisplayName(entry.remoteDisplayName, entry.remoteUri)
     val displayNameWithCount = if (count > 1) "$callerName ($count)" else callerName
     val timeStr   = formatTime(entry.timestampMs)
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
 
     Surface(
         color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .then(if (isGlass) Modifier.glass(RoundedCornerShape(12.dp)) else Modifier)
     ) {
         Row(
             modifier = Modifier
@@ -414,7 +421,7 @@ fun CallLogRow(
                     onClick = onClick,
                     onLongClick = { expanded = true }
                 )
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 8.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(

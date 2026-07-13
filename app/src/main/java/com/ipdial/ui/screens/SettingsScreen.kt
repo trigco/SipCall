@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.media.RingtoneManager
 import android.net.Uri
+import android.os.Build
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.SipViewModel
+import com.ipdial.ui.theme.glass
 import com.ipdial.util.UpdateChecker
 import kotlinx.coroutines.launch
 
@@ -43,12 +45,15 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     val fontSizeMultiplier by vm.fontSizeMultiplier.collectAsState()
     val appIconAlias by vm.appIconAlias.collectAsState()
     val keypadDesign by vm.keypadDesign.collectAsState()
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     
     var showRestartDialog by remember { mutableStateOf(false) }
 
     if (showRestartDialog) {
         AlertDialog(
             onDismissRequest = { showRestartDialog = false },
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
+            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Restart Required") },
             text = { Text("The app icon has been updated. Please restart the app or check your home screen after a few seconds to see the change.") },
             confirmButton = {
@@ -65,7 +70,13 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            val data = result.data
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            }
             scope.launch { vm.repo.setGlobalRingtone(uri?.toString()) }
         }
     }
@@ -97,6 +108,8 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showThemeDialog) {
         AlertDialog(
             onDismissRequest = { showThemeDialog = false },
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
+            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Select Theme") },
             text = {
                 Column {
@@ -111,7 +124,11 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                             val themeMode by vm.themeMode.collectAsState()
                             RadioButton(selected = themeMode == mode, onClick = null)
                             Spacer(Modifier.width(8.dp))
-                            Text(mode.name)
+                            Text(when(mode) {
+                                ThemeMode.Obsidian -> "Obsidian"
+                                ThemeMode.Quartz -> "Quartz"
+                                else -> mode.name
+                            })
                         }
                     }
                 }
@@ -123,6 +140,8 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showFontSizeDialog) {
         AlertDialog(
             onDismissRequest = { showFontSizeDialog = false },
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
+            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Select Font Size") },
             text = {
                 Column {
@@ -148,6 +167,8 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showAppIconDialog) {
         AlertDialog(
             onDismissRequest = { showAppIconDialog = false },
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
+            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Choose App Icon") },
             text = {
                 Column(
@@ -212,6 +233,8 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         val release = updateRelease ?: return
         AlertDialog(
             onDismissRequest = { showUpdateDialog = false },
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
+            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             icon = { Icon(Icons.Default.SystemUpdate, null) },
             title = { Text("Update Available") },
             text = {
@@ -239,6 +262,8 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showCodecDialog && activeAccount != null) {
         AlertDialog(
             onDismissRequest = { showCodecDialog = false },
+            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
+            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Select Preferred Codec") },
             text = {
                 Column {
@@ -455,7 +480,8 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     subtitle = when(themeMode) {
                         ThemeMode.Dark -> "Dark"
                         ThemeMode.Light -> "Light"
-                        ThemeMode.Glass -> "Glass"
+                        ThemeMode.Obsidian -> "Obsidian"
+                        ThemeMode.Quartz -> "Quartz"
                         ThemeMode.System -> "System (${if(systemDark) "Dark" else "Light"})"
                     },
                     onClick = { showThemeDialog = true }

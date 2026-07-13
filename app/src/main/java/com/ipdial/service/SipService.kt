@@ -14,7 +14,6 @@ import android.media.RingtoneManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
@@ -305,24 +304,8 @@ class SipService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val delayStartForeground = intent?.getBooleanExtra("delayStartForeground", false) ?: false
-
-        if (delayStartForeground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // Delay foreground service promotion to allow system to stabilize after boot
-            try {
-                // First, try to start as regular background service
-                Log.d("SipService", "Starting in background mode with delayed foreground promotion")
-                // This ensures we can start without FGS restrictions
-                Handler(Looper.getMainLooper()).postDelayed({
-                    startServiceForeground()
-                }, 2000) // 2 second delay
-            } catch (e: Exception) {
-                Log.e("SipService", "Failed to schedule delayed foreground promotion", e)
-                startServiceForeground()
-            }
-        } else {
-            startServiceForeground()
-        }
+        // Promote to foreground immediately to satisfy system requirements for startForegroundService
+        startServiceForeground()
 
         when (intent?.action) {
             ACTION_ANSWER -> {
@@ -379,14 +362,7 @@ class SipService : Service() {
                                     base
                                 }
                             } else {
-                                var num = number.removePrefix("sip:")
-                                if (num.all { it.isDigit() }) {
-                                    if (num.length == 11 && num.startsWith("0")) {
-                                        num = "+880${num.drop(1)}"
-                                    } else if (num.length == 10 && num.startsWith("1")) {
-                                        num = "+880$num"
-                                    }
-                                }
+                                val num = number.removePrefix("sip:")
 
                                 val host = if (acc.port != null && acc.port > 0 && !acc.domain.contains(":")) {
                                     "${acc.domain}:${acc.port}"
@@ -607,29 +583,52 @@ class SipService : Service() {
                     callStartTime = 0
                     lastSession = null
                 } else {
+                    val stateChanged = session.state != lastSession?.state
+                    val speakerChanged = session.isSpeaker != lastSession?.isSpeaker
+                    
                     lastSession = session
-                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                        audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                    }
                     
                     when (session.state) {
                         CallState.INCOMING -> {
                             playRingtone()
                             acquireWakeLockForIncoming()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                            // If user toggled speaker while ringing, apply it (though sound is usually just ringtone)
+                            if (speakerChanged) {
+                                routeAudioToSpeaker(session.isSpeaker)
+                            }
                         }
                         CallState.CONFIRMED -> {
                             stopRingtone()
                             cancelIncomingNotification()
-                            routeAudioToDefault()
+                            
+                            // Always route audio when state becomes CONFIRMED, 
+                            // or if speaker was toggled during the call
+                            if (stateChanged || speakerChanged) {
+                                // Small delay to let Telecom session stabilize if just confirmed
+                                if (stateChanged) delay(300) 
+                                routeAudioToDefault()
+                            }
+                            
                             acquireWakeLock()
                             lastWasConfirmed = true
                             if (callStartTime == 0L) callStartTime = System.currentTimeMillis()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
                         CallState.CALLING, CallState.EARLY, CallState.CONNECTING -> {
-                            routeAudioToDefault()
+                            if (stateChanged || speakerChanged) {
+                                routeAudioToDefault()
+                            }
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                         }
-                        else -> {}
+                        else -> {
+                            if (speakerChanged) {
+                                routeAudioToDefault()
+                            }
+                        }
                     }
                 }
             }
@@ -637,45 +636,54 @@ class SipService : Service() {
     }
 
     private fun startServiceForeground() {
+        val notification = buildServiceNotification()
+        
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                // Try phoneCall type first
+                // Try phoneCall type first as it's the primary purpose
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     androidx.core.app.ServiceCompat.startForeground(
                         this,
                         NOTIF_ID_SERVICE,
-                        buildServiceNotification(),
+                        notification,
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
                     )
                 } else {
-                    startForeground(NOTIF_ID_SERVICE, buildServiceNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+                    startForeground(NOTIF_ID_SERVICE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                 }
                 Log.d("SipService", "Started FGS with type phoneCall")
             } catch (e: Exception) {
-                // Fallback to dataSync if phoneCall is not allowed (common on BOOT_COMPLETED for Android 14+)\
+                Log.w("SipService", "Failed to start FGS with type phoneCall, trying fallback: ${e.message}")
+                
+                // Fallback to dataSync if phoneCall is not allowed (common on some background starts)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     try {
                         androidx.core.app.ServiceCompat.startForeground(
                             this,
                             NOTIF_ID_SERVICE,
-                            buildServiceNotification(),
+                            notification,
                             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                         )
                         Log.d("SipService", "Started FGS with type dataSync fallback")
                     } catch (ex: Exception) {
                         Log.e("SipService", "Failed to start FGS with dataSync fallback", ex)
+                        // Absolute fallback: no type
+                        try {
+                            startForeground(NOTIF_ID_SERVICE, notification)
+                        } catch (lastEx: Exception) {
+                            Log.e("SipService", "Final FGS attempt failed", lastEx)
+                        }
                     }
                 } else {
-                    Log.e("SipService", "Failed to start FGS with type phoneCall", e)
                     try {
-                        startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
+                        startForeground(NOTIF_ID_SERVICE, notification)
                     } catch (lastEx: Exception) {
                         Log.e("SipService", "Absolute FGS failure", lastEx)
                     }
                 }
             }
         } else {
-            startForeground(NOTIF_ID_SERVICE, buildServiceNotification())
+            startForeground(NOTIF_ID_SERVICE, notification)
         }
     }
 

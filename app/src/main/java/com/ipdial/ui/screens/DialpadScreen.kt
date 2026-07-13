@@ -42,6 +42,7 @@ import com.ipdial.ui.SipViewModel
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.AccountSelectionDialog
 import com.ipdial.ui.theme.ForestGreen
+import com.ipdial.ui.theme.glass
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -274,7 +275,7 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 0.dp)
-                        .background(MaterialTheme.colorScheme.surface)
+                        .background(if (com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None) Color.Transparent else MaterialTheme.colorScheme.surface)
                 ) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                     keys.chunked(3).forEach { row ->
@@ -443,15 +444,14 @@ fun DialKeyRounded(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     Surface(
         shape = CircleShape,
-        color = if (androidx.compose.foundation.isSystemInDarkTheme()) 
-            Color.White.copy(alpha = 0.2f) 
-        else 
-            Color.Black.copy(alpha = 0.08f),
+        color = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surfaceVariant,
         modifier = modifier
             .aspectRatio(1f)
             .padding(4.dp)
+            .then(if (isGlass) Modifier.glass(CircleShape) else Modifier)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick
@@ -492,9 +492,11 @@ fun DialKey(
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     Box(
         modifier = modifier
             .height(64.dp)
+            .then(if (isGlass) Modifier.glass(RoundedCornerShape(0.dp), borderWidth = 0.5.dp) else Modifier)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick

@@ -54,6 +54,7 @@ data class CallSession(
     val isSpeaker: Boolean = false,
     val isOnHold: Boolean = false,
     val isRecording: Boolean = false,
+    val rxVolume: Float = 2.5f
 )
 
 enum class CallDirection { INCOMING, OUTGOING }
@@ -84,6 +85,6 @@ enum class CallState {
 
 enum class KeypadDesign { Grid, Rounded }
 
-enum class ThemeMode { System, Light, Dark, Glass }
+enum class ThemeMode { System, Light, Dark, Obsidian, Quartz }
 
 enum class AudioDeviceMode { EARPIECE, SPEAKER, BLUETOOTH }

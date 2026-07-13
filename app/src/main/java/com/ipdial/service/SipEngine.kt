@@ -428,10 +428,11 @@ object SipEngine {
             callMap[session.callId]?.let { call ->
                 try {
                     val ci = call.info
-                    if (ci.media.size > 0) {
-                        val mi = ci.media.get(0)
-                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO) {
-                            val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index))
+                    for (i in 0 until ci.media.size) {
+                        val mi = ci.media.get(i)
+                        if (mi.type == pjmedia_type.PJMEDIA_TYPE_AUDIO &&
+                            mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
+                            val aud = AudioMedia.typecastFromMedia(call.getMedia(mi.index.toLong()))
                             if (muted) aud.adjustTxLevel(0f) else aud.adjustTxLevel(VOLUME_BOOST_FACTOR)
                         }
                     }
@@ -444,14 +445,15 @@ object SipEngine {
     }
 
     fun setSpeaker(enabled: Boolean) {
+        log("setSpeaker: $enabled")
         _callSession.value = _callSession.value?.copy(isSpeaker = enabled)
-        audioManager.isSpeakerphoneOn = enabled
     }
 
     fun setCallVolume(factor: Float) {
         registerCurrentThread()
         log("Adjusting call volume (Rx level) to factor: $factor")
         _callSession.value?.let { session ->
+            _callSession.value = session.copy(rxVolume = factor)
             callMap[session.callId]?.let { call ->
                 try {
                     val ci = call.info
@@ -777,8 +779,10 @@ object SipEngine {
                     return
                 }
 
-                audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
-                audioManager.isSpeakerphoneOn = _callSession.value?.isSpeaker ?: false
+                // Note: Speaker routing is handled by SipService via observing callSession.isSpeaker
+                if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
+                    audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+                }
 
                 for (i in 0 until ci.media.size) {
                     try {
@@ -787,8 +791,13 @@ object SipEngine {
                             mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
                             val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
 
-                            aud.adjustRxLevel(VOLUME_BOOST_FACTOR)
-                            aud.adjustTxLevel(VOLUME_BOOST_FACTOR)
+                            // Apply current mute/volume state
+                            val currentSession = _callSession.value
+                            val txLevel = if (currentSession?.isMuted == true) 0f else VOLUME_BOOST_FACTOR
+                            val rxLevel = currentSession?.rxVolume ?: VOLUME_BOOST_FACTOR
+                            
+                            aud.adjustRxLevel(rxLevel)
+                            aud.adjustTxLevel(txLevel)
 
                             aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
                             endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)
@@ -813,14 +822,8 @@ object SipEngine {
         if (destination.startsWith("sip:") && destination.contains("@")) return destination
 
         val cleanDestination = destination.removePrefix("sip:").substringBefore("@")
-        var number = cleanDestination.removePrefix("+")
+        val number = cleanDestination
         
-        // Bangladesh formatting: If starts with '0' and looks like a mobile/landline number, prepend '88'
-        // We use a length check of 10 to avoid prefixing short codes like 123
-        if (number.length >= 10 && number.startsWith("0")) {
-            number = "880${number.removePrefix("0")}"
-        }
-
         // Try to append the domain from the provided account or the active session
         val targetAccountId = accountId ?: _callSession.value?.accountId
         val domain = if (targetAccountId != null) accountConfigs[targetAccountId]?.domain else null

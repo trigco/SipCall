@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -37,6 +38,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ipdial.ui.SipViewModel
+import com.ipdial.ui.theme.glass
 import com.ipdial.util.SipLogger
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +58,7 @@ fun ActivityLogScreen(
         }
     }
 
+    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     Scaffold(
         topBar = {
             TopAppBar(
@@ -82,9 +85,12 @@ fun ActivityLogScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                    titleContentColor = MaterialTheme.colorScheme.primary
-                )
+                    containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                    titleContentColor = if (isGlass) Color.White else MaterialTheme.colorScheme.primary,
+                    navigationIconContentColor = if (isGlass) Color.White else MaterialTheme.colorScheme.primary,
+                    actionIconContentColor = if (isGlass) Color.White else MaterialTheme.colorScheme.primary
+                ),
+                modifier = Modifier.then(if (isGlass) Modifier.glass(RoundedCornerShape(0.dp)) else Modifier)
             )
         },
         bottomBar = {
@@ -98,7 +104,12 @@ fun ActivityLogScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .background(Color(0xFF1E1E1E)) // Dark terminal-like background
+                .background(
+                    if (com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None) 
+                        Color(0xCC1E1E1E) 
+                    else 
+                        Color(0xFF1E1E1E)
+                ) // Dark terminal-like background
         ) {
             if (logs.isEmpty()) {
                 Box(
@@ -128,12 +139,14 @@ fun ActivityLogScreen(
                         }
                         Text(
                             text = logLine,
-                            color = color,
+                            color = if (isGlass) (if (color == Color(0xFFECEFF1)) Color.White else color) else color,
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(vertical = 2.dp),
+                                .padding(vertical = 4.dp, horizontal = 8.dp)
+                                .then(if (isGlass) Modifier.glass(RoundedCornerShape(4.dp)) else Modifier)
+                                .padding(horizontal = 8.dp, vertical = 2.dp),
                             lineHeight = 14.sp
                         )
                     }
