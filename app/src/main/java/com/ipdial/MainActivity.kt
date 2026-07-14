@@ -738,6 +738,7 @@ fun MainPagerScreen(
             0 -> HomeScreen(
                 vm = vm, 
                 onOpenDrawer = onOpenDrawer,
+                onNavigateToAccounts = { navController.navigate(NavDest.Accounts.route) },
                 onEditBeforeCall = { number ->
                     vm.prefillDialer(number)
                     navController.navigate(NavDest.Keypad.route) {
@@ -747,8 +748,16 @@ fun MainPagerScreen(
                     }
                 }
             )
-            1 -> DialpadScreen(vm = vm, onOpenDrawer = onOpenDrawer)
-            2 -> ContactsScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+            1 -> DialpadScreen(
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onNavigateToAccounts = { navController.navigate(NavDest.Accounts.route) }
+            )
+            2 -> ContactsScreen(
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onNavigateToAccounts = { navController.navigate(NavDest.Accounts.route) }
+            )
         }
     }
 }

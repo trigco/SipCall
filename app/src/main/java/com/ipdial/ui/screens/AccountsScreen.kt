@@ -225,7 +225,7 @@ fun AccountEditSheet(
     onSave: (SipAccount) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var label     by remember { mutableStateOf(existing?.label ?: "") }
+    var label     by remember { mutableStateOf(existing?.label ?: "iCall BD") }
     var username  by remember { mutableStateOf(existing?.username ?: "") }
     var password  by remember { mutableStateOf(existing?.password ?: "") }
     var domain    by remember { mutableStateOf(existing?.domain ?: defaultDomain) }

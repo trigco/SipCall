@@ -46,7 +46,11 @@ import com.ipdial.ui.theme.glass
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
-fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
+fun DialpadScreen(
+    vm: SipViewModel, 
+    onOpenDrawer: () -> Unit,
+    onNavigateToAccounts: () -> Unit = {}
+) {
     val dialTextFieldValue by vm.dialString.collectAsState()
     val dialString = dialTextFieldValue.text
     val lastDialedNumber by vm.lastDialedNumber.collectAsState()
@@ -81,7 +85,12 @@ fun DialpadScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
                 .background(MaterialTheme.colorScheme.background),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+            IPDialTopBar(
+                accounts = accounts, 
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onAddAccount = onNavigateToAccounts
+            )
 
             // Suggested contacts space
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {

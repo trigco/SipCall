@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -85,15 +86,21 @@ fun RegStatusIndicator(
     vm: SipViewModel? = null,
     showAccountInfo: SipAccount? = null
 ) {
+    val vmActiveAccount by (vm?.activeAccount?.collectAsState() ?: remember { mutableStateOf(null) })
+    val activeAccount = showAccountInfo ?: vmActiveAccount ?: accounts.firstOrNull { it.isEnabled } ?: accounts.firstOrNull()
+
     val regDotColor = when {
+        activeAccount != null -> when (activeAccount.regStatus) {
+            RegStatus.REGISTERED  -> DotGreen
+            RegStatus.REGISTERING -> DotAmber
+            RegStatus.ERROR       -> DotRed
+            else                  -> DotGrey
+        }
         accounts.any { it.regStatus == RegStatus.REGISTERED }    -> DotGreen
         accounts.any { it.regStatus == RegStatus.REGISTERING }   -> DotAmber
         accounts.any { it.regStatus == RegStatus.ERROR }         -> DotRed
         else                                                      -> DotGrey
     }
-
-    val vmActiveAccount by (vm?.activeAccount?.collectAsState() ?: remember { mutableStateOf(null) })
-    val activeAccount = showAccountInfo ?: vmActiveAccount ?: accounts.firstOrNull { it.isEnabled } ?: accounts.firstOrNull()
     val context = LocalContext.current
 
     Column(
@@ -134,7 +141,7 @@ fun RegStatusIndicator(
             }
         }
 
-        if (activeAccount != null && (activeAccount.domain == "sip.amarip.net" || activeAccount.domain == "103.170.231.10") && vm != null) {
+        if (activeAccount != null && (activeAccount.domain == "sip.amarip.net" || activeAccount.domain == "103.170.231.10" || activeAccount.domain == "103.129.202.202") && vm != null) {
             val balanceMap by vm.balances.collectAsState()
             val balance = balanceMap[activeAccount.id]
             val isPro by vm.isPro.collectAsState()
@@ -218,7 +225,8 @@ fun RegStatusIndicator(
 fun IPDialTopBar(
     accounts: List<SipAccount>,
     vm: SipViewModel? = null,
-    onOpenDrawer: () -> Unit
+    onOpenDrawer: () -> Unit,
+    onAddAccount: (() -> Unit)? = null
 ) {
     val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     val containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface
@@ -258,15 +266,46 @@ fun IPDialTopBar(
                     .align(Alignment.Center)
                     .then(if (isGlass) Modifier.glass(RoundedCornerShape(12.dp)) else Modifier)
             ) {
-                Text(
-                    text = appName,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = appNameColor
-                    ),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    textAlign = TextAlign.Center
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = appName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = appNameColor
+                        ),
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    if (accounts.isEmpty() && onAddAccount != null) {
+                        Spacer(Modifier.width(12.dp))
+                        Surface(
+                            onClick = onAddAccount,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add, 
+                                    contentDescription = null, 
+                                    modifier = Modifier.size(14.dp), 
+                                    tint = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "Add Account",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Right: Hamburger
