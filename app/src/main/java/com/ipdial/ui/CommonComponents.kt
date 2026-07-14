@@ -266,15 +266,46 @@ fun IPDialTopBar(
                     .align(Alignment.Center)
                     .then(if (isGlass) Modifier.glass(RoundedCornerShape(12.dp)) else Modifier)
             ) {
-                Text(
-                    text = appName,
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = appNameColor
-                    ),
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    textAlign = TextAlign.Center
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = appName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = appNameColor
+                        ),
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    if (accounts.isEmpty() && onAddAccount != null) {
+                        Spacer(Modifier.width(12.dp))
+                        Surface(
+                            onClick = onAddAccount,
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add, 
+                                    contentDescription = null, 
+                                    modifier = Modifier.size(14.dp), 
+                                    tint = MaterialTheme.colorScheme.onPrimary
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    "Add Account",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Right side items: Add Account (if no accounts) + Hamburger
