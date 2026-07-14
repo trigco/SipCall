@@ -47,7 +47,7 @@ import kotlinx.coroutines.withContext
 
 class SipViewModel(app: Application) : AndroidViewModel(app) {
 
-    private val SUPPORTED_BALANCE_DOMAINS = listOf("sip.amarip.net", "103.170.231.10")
+    private val SUPPORTED_BALANCE_DOMAINS = listOf("sip.amarip.net", "103.170.231.10", "103.129.202.202")
 
     val repo = AccountRepository(app)
     private val logRepo = CallLogRepository.getInstance(app)
@@ -99,7 +99,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, KeypadDesign.Grid)
 
     val defaultDomain: StateFlow<String> = repo.defaultDomain
-        .stateIn(viewModelScope, SharingStarted.Eagerly, "sip.amarip.net")
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "103.129.202.202")
 
     val lastDialedNumber: StateFlow<String?> = repo.lastDialedNumber
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -174,8 +174,21 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val _adCooldownSeconds = MutableStateFlow(0)
+    val adCooldownSeconds: StateFlow<Int> = _adCooldownSeconds.asStateFlow()
+
+    private fun startAdCooldown() {
+        viewModelScope.launch {
+            _adCooldownSeconds.value = 7
+            while (_adCooldownSeconds.value > 0) {
+                delay(1000)
+                _adCooldownSeconds.value -= 1
+            }
+        }
+    }
+
     fun watchRewardedAd(context: Context, onReward: () -> Unit) {
-        if (_isLoadingAd.value) return
+        if (_isLoadingAd.value || _adCooldownSeconds.value > 0) return
         _isLoadingAd.value = true
         android.util.Log.d("SipViewModel", "Starting rewarded ad flow")
 
@@ -191,6 +204,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
                 try { firestoreSync?.incrementPoints(1) } catch (_: Exception) {}
                 onReward()
                 _isLoadingAd.value = false
+                startAdCooldown()
             }
         }
 
@@ -410,7 +424,7 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activeAccount: StateFlow<SipAccount?> = combine(accounts, _selectedAccountId) { list, id ->
-        list.find { it.id == id } ?: list.firstOrNull { it.isEnabled && it.isDefault } 
+        list.firstOrNull { it.isEnabled && it.isDefault } ?: list.find { it.id == id }
             ?: list.firstOrNull { it.isEnabled } ?: list.firstOrNull()
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -895,9 +909,13 @@ class SipViewModel(app: Application) : AndroidViewModel(app) {
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Use the domain from the account if it's a known server, fallback to default API host
-                val apiHost = if (host == "103.170.231.10") host else "sip.amarip.net"
-                val url = java.net.URL("https://$apiHost/api/mobile/login")
+                // Determine API URL based on host
+                val url = when (host) {
+                    "103.129.202.202" -> java.net.URL("https://billing.webvoice.net/api/mobile/login")
+                    "103.170.231.10" -> java.net.URL("https://103.170.231.10/api/mobile/login")
+                    else -> java.net.URL("https://sip.amarip.net/api/mobile/login")
+                }
+
                 val conn = url.openConnection() as java.net.HttpURLConnection
                 conn.requestMethod = "POST"
                 conn.setRequestProperty("Content-Type", "application/json")

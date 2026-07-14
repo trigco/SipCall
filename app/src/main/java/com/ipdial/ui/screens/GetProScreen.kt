@@ -57,7 +57,8 @@ fun GetProScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
             }
 
             item {
-                PointsBalanceCard(proPoints, isLoadingAd) {
+                val cooldown by vm.adCooldownSeconds.collectAsState()
+                PointsBalanceCard(proPoints, isLoadingAd, cooldown) {
                     vm.watchRewardedAd(context) {
                         // Reward handled in VM
                     }
@@ -210,7 +211,7 @@ fun ProStatusCard(isPro: Boolean, expiration: Long) {
 }
 
 @Composable
-fun PointsBalanceCard(points: Int, isLoading: Boolean, onWatchAd: () -> Unit) {
+fun PointsBalanceCard(points: Int, isLoading: Boolean, cooldown: Int, onWatchAd: () -> Unit) {
     val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     Card(
         modifier = Modifier
@@ -235,7 +236,7 @@ fun PointsBalanceCard(points: Int, isLoading: Boolean, onWatchAd: () -> Unit) {
             }
             Button(
                 onClick = onWatchAd,
-                enabled = !isLoading,
+                enabled = !isLoading && cooldown == 0,
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.then(if (isGlass) Modifier.glass(RoundedCornerShape(8.dp)) else Modifier),
@@ -247,7 +248,12 @@ fun PointsBalanceCard(points: Int, isLoading: Boolean, onWatchAd: () -> Unit) {
                     Icon(Icons.Default.VideoLibrary, null, modifier = Modifier.size(16.dp))
                 }
                 Spacer(Modifier.width(6.dp))
-                Text(if (isLoading) "Loading..." else "Get 1 Point", style = MaterialTheme.typography.labelMedium)
+                val buttonText = when {
+                    isLoading -> "Loading..."
+                    cooldown > 0 -> "Wait ${cooldown}s"
+                    else -> "Get 1 Point"
+                }
+                Text(buttonText, style = MaterialTheme.typography.labelMedium)
             }
         }
     }

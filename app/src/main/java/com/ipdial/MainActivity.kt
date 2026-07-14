@@ -344,18 +344,23 @@ fun IPDialApp() {
 
     val pagerState = rememberPagerState(pageCount = { 3 })
 
-    // Sync navController with pager
+    // Sync navController with pager (immediate skip to avoid double-animation)
     LaunchedEffect(currentRoute) {
-        when (currentRoute) {
-            NavDest.Home.route -> pagerState.scrollToPage(0)
-            NavDest.Keypad.route -> pagerState.scrollToPage(1)
-            NavDest.Contacts.route -> pagerState.scrollToPage(2)
+        val targetPage = when (currentRoute) {
+            NavDest.Home.route -> 0
+            NavDest.Keypad.route -> 1
+            NavDest.Contacts.route -> 2
+            else -> -1
+        }
+        if (targetPage != -1 && pagerState.currentPage != targetPage) {
+            pagerState.scrollToPage(targetPage)
         }
     }
 
     // Sync pager with navController for back button and other nav logic
-    LaunchedEffect(pagerState.currentPage) {
-        val targetRoute = when (pagerState.currentPage) {
+    // Use settledPage to ensure we only trigger navigation when the swipe is actually finished
+    LaunchedEffect(pagerState.settledPage) {
+        val targetRoute = when (pagerState.settledPage) {
             0 -> NavDest.Home.route
             1 -> NavDest.Keypad.route
             2 -> NavDest.Contacts.route
@@ -364,7 +369,9 @@ fun IPDialApp() {
         if (targetRoute != null && currentRoute != targetRoute && 
             (currentRoute == NavDest.Home.route || currentRoute == NavDest.Keypad.route || currentRoute == NavDest.Contacts.route)) {
             navController.navigate(targetRoute) {
-                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                popUpTo(navController.graph.findStartDestination().id) { 
+                    saveState = true 
+                }
                 launchSingleTop = true
                 restoreState = true
             }
@@ -738,6 +745,7 @@ fun MainPagerScreen(
             0 -> HomeScreen(
                 vm = vm, 
                 onOpenDrawer = onOpenDrawer,
+                onNavigateToAccounts = { navController.navigate(NavDest.Accounts.route) },
                 onEditBeforeCall = { number ->
                     vm.prefillDialer(number)
                     navController.navigate(NavDest.Keypad.route) {
@@ -747,8 +755,16 @@ fun MainPagerScreen(
                     }
                 }
             )
-            1 -> DialpadScreen(vm = vm, onOpenDrawer = onOpenDrawer)
-            2 -> ContactsScreen(vm = vm, onOpenDrawer = onOpenDrawer)
+            1 -> DialpadScreen(
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onNavigateToAccounts = { navController.navigate(NavDest.Accounts.route) }
+            )
+            2 -> ContactsScreen(
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onNavigateToAccounts = { navController.navigate(NavDest.Accounts.route) }
+            )
         }
     }
 }

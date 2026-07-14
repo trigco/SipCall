@@ -51,7 +51,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
+fun ContactsScreen(
+    vm: SipViewModel, 
+    onOpenDrawer: () -> Unit,
+    onNavigateToAccounts: () -> Unit = {}
+) {
     val contacts by vm.contacts.collectAsState()
     val searchQuery by vm.searchQuery.collectAsState()
     val accounts by vm.accounts.collectAsState()
@@ -88,7 +92,12 @@ fun ContactsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit) {
 
     Scaffold(
         topBar = {
-            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+            IPDialTopBar(
+                accounts = accounts, 
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onAddAccount = onNavigateToAccounts
+            )
         },
         bottomBar = {
             com.ipdial.ui.StartIoBanner(

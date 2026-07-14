@@ -69,7 +69,7 @@ class AccountRepository(private val context: Context) {
     }
 
     val defaultDomain: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[defaultDomainKey] ?: "sip.amarip.net"
+        prefs[defaultDomainKey] ?: "103.129.202.202"
     }
 
     val lastDialedNumber: Flow<String?> = context.dataStore.data.map { it[lastDialedKey] }

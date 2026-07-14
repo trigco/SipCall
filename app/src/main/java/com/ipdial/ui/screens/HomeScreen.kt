@@ -91,6 +91,7 @@ data class LogGroup(
 fun HomeScreen(
     vm: SipViewModel, 
     onOpenDrawer: () -> Unit,
+    onNavigateToAccounts: () -> Unit = {},
     onEditBeforeCall: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -191,7 +192,12 @@ fun HomeScreen(
                 .padding(innerPadding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            IPDialTopBar(accounts = accounts, vm = vm, onOpenDrawer = onOpenDrawer)
+            IPDialTopBar(
+                accounts = accounts, 
+                vm = vm, 
+                onOpenDrawer = onOpenDrawer,
+                onAddAccount = onNavigateToAccounts
+            )
 
             SearchBarRow(
                 query = searchQuery,
