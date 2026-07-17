@@ -225,22 +225,10 @@ class SipService : Service() {
                 SipEngine.init(applicationContext)
             }
             
-            // 3. Migration: Ensure default codec is G711A for AmarIP compatibility (what worked in v1.0.6)
-            try {
-                val accountsList = repo.accounts.first()
-                accountsList.forEach { acc ->
-                    if (acc.codec != PreferredCodec.G711A) {
-                        repo.saveAccount(acc.copy(codec = PreferredCodec.G711A))
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e("SipService", "Migration to G711A failed", e)
-            }
-
-            // 4. Register accounts flow
+            // 3. Register accounts flow
             registerAccountsFromDataStore()
 
-            // 5. Register default network callback
+            // 4. Register default network callback
             registerDefaultNetworkCallback()
         }
 
