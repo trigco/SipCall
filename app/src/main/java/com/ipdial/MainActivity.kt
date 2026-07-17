@@ -3,21 +3,17 @@ package com.ipdial
 import android.Manifest
 import android.app.Application
 import android.app.KeyguardManager
-import androidx.compose.foundation.background
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.pager.PagerState
-import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -34,10 +30,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CallEnd
 import androidx.compose.material.icons.filled.CardGiftcard
@@ -81,6 +82,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -114,9 +117,6 @@ import com.ipdial.ui.screens.IncomingCallScreen
 import com.ipdial.ui.screens.PrivacyPolicyScreen
 import com.ipdial.ui.screens.RecordingsScreen
 import com.ipdial.ui.screens.SettingsScreen
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.blur
 import com.ipdial.ui.theme.IPDialTheme
 import com.ipdial.ui.theme.glass
 import kotlinx.coroutines.launch
@@ -308,6 +308,7 @@ sealed class NavDest(val route: String, val label: String, val icon: ImageVector
     object Logs    : NavDest("logs",    "Activity Log", Icons.AutoMirrored.Filled.List)
     object GetPro  : NavDest("get_pro",  "IPDial Pro",   Icons.Default.CardGiftcard)
     object Privacy : NavDest("privacy",  "Privacy Policy", Icons.Default.PrivacyTip)
+    object AudioCodecs : NavDest("audio_codecs", "Audio Codecs", Icons.Default.Audiotrack)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -797,8 +798,16 @@ fun AppNavHost(
             SettingsScreen(
                 vm = vm, 
                 onOpenDrawer = onOpenDrawer,
-                onNavigateToLogs = { navController.navigate(NavDest.Logs.route) }
+                onNavigateToLogs = { navController.navigate(NavDest.Logs.route) },
+                onNavigateToCodecs = { navController.navigate(NavDest.AudioCodecs.route) }
             ) 
+        }
+        composable(NavDest.AudioCodecs.route) {
+            AudioCodecScreen(
+                vm = vm,
+                onOpenDrawer = onOpenDrawer,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(NavDest.Accounts.route) { 
             AccountsScreen(vm = vm, onOpenDrawer = onOpenDrawer) 

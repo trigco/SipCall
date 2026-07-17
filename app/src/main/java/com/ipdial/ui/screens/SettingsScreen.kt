@@ -30,13 +30,17 @@ import androidx.compose.ui.unit.dp
 import com.ipdial.data.model.*
 import com.ipdial.ui.IPDialTopBar
 import com.ipdial.ui.SipViewModel
-import com.ipdial.ui.theme.glass
 import com.ipdial.util.UpdateChecker
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs: () -> Unit) {
+fun SettingsScreen(
+    vm: SipViewModel,
+    onOpenDrawer: () -> Unit,
+    onNavigateToLogs: () -> Unit,
+    onNavigateToCodecs: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val accounts by vm.accounts.collectAsState()
@@ -45,15 +49,12 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     val fontSizeMultiplier by vm.fontSizeMultiplier.collectAsState()
     val appIconAlias by vm.appIconAlias.collectAsState()
     val keypadDesign by vm.keypadDesign.collectAsState()
-    val isGlass = com.ipdial.ui.theme.LocalGlassMode.current != com.ipdial.ui.theme.GlassMode.None
     
     var showRestartDialog by remember { mutableStateOf(false) }
 
     if (showRestartDialog) {
         AlertDialog(
             onDismissRequest = { showRestartDialog = false },
-            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Restart Required") },
             text = { Text("The app icon has been updated. Please restart the app or check your home screen after a few seconds to see the change.") },
             confirmButton = {
@@ -70,13 +71,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            val data = result.data
-            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            }
+            val uri = result.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
             scope.launch { vm.repo.setGlobalRingtone(uri?.toString()) }
         }
     }
@@ -85,14 +80,9 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         try {
             val pm = context.packageManager
             val pkgName = context.packageName
-            if (pm != null && pkgName != null) {
-                pm.getPackageInfo(pkgName, 0)?.versionName ?: "1.0"
-            } else {
-                "1.0"
-            }
+            pm.getPackageInfo(pkgName, 0)?.versionName ?: "1.0"
         }
         catch (e: Exception) {
-            Log.e("SettingsScreen", "Failed to get version", e)
             "1.0"
         }
     }
@@ -100,7 +90,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     var checkingUpdate by remember { mutableStateOf(false) }
     var updateRelease by remember { mutableStateOf<UpdateChecker.GitHubRelease?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
-    var showCodecDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showAppIconDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -108,8 +97,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showThemeDialog) {
         AlertDialog(
             onDismissRequest = { showThemeDialog = false },
-            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Select Theme") },
             text = {
                 Column {
@@ -124,11 +111,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                             val themeMode by vm.themeMode.collectAsState()
                             RadioButton(selected = themeMode == mode, onClick = null)
                             Spacer(Modifier.width(8.dp))
-                            Text(when(mode) {
-                                ThemeMode.Obsidian -> "Obsidian"
-                                ThemeMode.Quartz -> "Quartz"
-                                else -> mode.name
-                            })
+                            Text(mode.name)
                         }
                     }
                 }
@@ -140,8 +123,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showFontSizeDialog) {
         AlertDialog(
             onDismissRequest = { showFontSizeDialog = false },
-            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Select Font Size") },
             text = {
                 Column {
@@ -167,8 +148,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
     if (showAppIconDialog) {
         AlertDialog(
             onDismissRequest = { showAppIconDialog = false },
-            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             title = { Text("Choose App Icon") },
             text = {
                 Column(
@@ -233,8 +212,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
         val release = updateRelease ?: return
         AlertDialog(
             onDismissRequest = { showUpdateDialog = false },
-            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
             icon = { Icon(Icons.Default.SystemUpdate, null) },
             title = { Text("Update Available") },
             text = {
@@ -256,38 +233,6 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             dismissButton = {
                 TextButton(onClick = { showUpdateDialog = false }) { Text("Later") }
             }
-        )
-    }
-
-    if (showCodecDialog && activeAccount != null) {
-        AlertDialog(
-            onDismissRequest = { showCodecDialog = false },
-            containerColor = if (isGlass) Color.Transparent else MaterialTheme.colorScheme.surface,
-            modifier = if (isGlass) Modifier.glass(MaterialTheme.shapes.extraLarge, alpha = 0.95f) else Modifier,
-            title = { Text("Select Preferred Codec") },
-            text = {
-                Column {
-                    PreferredCodec.entries.forEach { codec ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                activeAccount?.let { account ->
-                                    vm.checkCodecChange(context) {
-                                        val updated = account.copy(codec = codec)
-                                        vm.saveAccount(updated)
-                                        showCodecDialog = false
-                                    }
-                                }
-                            }.padding(vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = activeAccount?.codec == codec, onClick = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text(codec.name)
-                        }
-                    }
-                }
-            },
-            confirmButton = {}
         )
     }
 
@@ -383,14 +328,10 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
             item {
                 SettingsRow(
                     icon = Icons.Default.Audiotrack,
-                    title = "Select Audio Codec",
-                    subtitle = activeAccount?.codec?.name ?: "Select Codec",
+                    title = "Audio Codecs",
+                    subtitle = activeAccount?.codec?.name ?: "Configure Codecs",
                     onClick = {
-                        if (activeAccount != null) {
-                            showCodecDialog = true
-                        } else {
-                            android.widget.Toast.makeText(context, "No active account", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        onNavigateToCodecs()
                     }
                 )
             }
@@ -480,6 +421,7 @@ fun SettingsScreen(vm: SipViewModel, onOpenDrawer: () -> Unit, onNavigateToLogs:
                     subtitle = when(themeMode) {
                         ThemeMode.Dark -> "Dark"
                         ThemeMode.Light -> "Light"
+                        ThemeMode.Glass -> "Glass"
                         ThemeMode.Obsidian -> "Obsidian"
                         ThemeMode.Quartz -> "Quartz"
                         ThemeMode.System -> "System (${if(systemDark) "Dark" else "Light"})"

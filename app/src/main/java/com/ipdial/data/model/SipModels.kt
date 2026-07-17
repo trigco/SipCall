@@ -85,7 +85,7 @@ enum class CallState {
 
 enum class KeypadDesign { Grid, Rounded }
 
-enum class ThemeMode { System, Light, Dark, Obsidian, Quartz }
+enum class ThemeMode { System, Light, Dark, Glass, Obsidian, Quartz }
 
 data class CodecInfo(
     val id: String,
