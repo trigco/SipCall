@@ -52,8 +52,13 @@ object SipEngine {
     private var recorder: AudioMediaRecorder? = null
     private var logWriter: LogWriter? = null
 
-    // Volume Boost Factor (250%)
-    private const val VOLUME_BOOST_FACTOR = 2.5f
+    // Volume Boost Factor (150%) — reduced to avoid clipping/distortion
+    private const val VOLUME_BOOST_FACTOR = 1.5f
+
+    // Per-account audio settings cached for call-time application
+    private var currentEcEnabled = true
+    private var currentNsEnabled = true
+    private var currentAgcEnabled = true
 
     private fun log(message: String, isError: Boolean = false) {
         if (isError) {
@@ -154,12 +159,15 @@ object SipEngine {
                         logConfig.writer = writer
 
                         medConfig.apply {
-                            ecOptions = 0
-                            ecTailLen = 200
-                            noVad = true
-                            clockRate = 8000
-                            sndClockRate = 8000
-                            quality = 4
+                            clockRate = 16000        // High quality voice for codecs
+                            sndClockRate = 48000     // Android hardware-native rate (prevents resampling bugs)
+                            
+                            ecOptions = 1            // Use driver's default EC (Hardware AEC on Android)
+                            ecTailLen = 200          // Standard tail
+                            noVad = true             // Don't cut off quiet voices
+                            quality = 5              // Good balance of quality/performance
+                            channelCount = 1
+                            audioFramePtime = 20
                         }
                         uaConfig.apply {
                             userAgent = "IPDial/1.0 (Android)"
@@ -191,6 +199,34 @@ object SipEngine {
 
                     libStart()
                     log("#$callId: PJSIP started successfully")
+
+                    // Explicitly switch to Java Audio (AudioRecord/AudioTrack)
+                    // This is more reliable on Xiaomi/Realme devices than Native OpenSL
+                    try {
+                        val adm = ep.audDevManager()
+                        val devs = adm.enumDev2()
+                        var javaDevIndex = -1
+                        
+                        // Search for the "Android" driver device
+                        for (i in 0 until devs.size.toInt()) {
+                            val info = devs.get(i)
+                            log("Audio Device [$i]: ${info.name} (Driver: ${info.driver})")
+                            if (info.driver.contains("Android", ignoreCase = true)) {
+                                javaDevIndex = i
+                                break
+                            }
+                        }
+                        
+                        if (javaDevIndex != -1) {
+                            log("Selecting Java Audio (Android) at index $javaDevIndex")
+                            adm.setCaptureDev(javaDevIndex)
+                            adm.setPlaybackDev(javaDevIndex)
+                        } else {
+                            log("WARNING: Java Audio driver not found. Using PJSIP defaults.")
+                        }
+                    } catch (e: Exception) {
+                        log("Failed to configure audio devices: ${e.message}", true)
+                    }
 
                     endpoint = ep
                 }
@@ -274,6 +310,12 @@ object SipEngine {
                 accountMap[account.id] = pjAcc
                 accountConfigs[account.id] = account
                 log("Account added successfully: ${account.id} (${account.username})")
+
+                // Cache this account's audio processing preferences for call-time use
+                currentEcEnabled = account.ecEnabled
+                currentNsEnabled = account.nsEnabled
+                currentAgcEnabled = account.agcEnabled
+                log("Audio settings cached: EC=$currentEcEnabled, NS=$currentNsEnabled, AGC=$currentAgcEnabled")
             } catch (e: Throwable) {
                 pjAcc.delete()
                 throw e
@@ -576,6 +618,68 @@ object SipEngine {
         }
     }
 
+    fun getAvailableCodecs(): List<com.ipdial.data.model.CodecInfo> {
+        val ep = endpoint ?: return emptyList()
+        return try {
+            val codecs = ep.codecEnum2()
+            val result = mutableListOf<com.ipdial.data.model.CodecInfo>()
+            for (i in 0 until codecs.size) {
+                val codec = codecs.get(i)
+                val codecId = codec.codecId
+                val name = codecId.lowercase()
+                val priority = codec.priority
+                val isAvailable = priority > 0.toShort()
+
+                val quality = when {
+                    name.contains("opus") -> com.ipdial.data.model.CodecQuality.Excellent
+                    name.contains("g722") -> com.ipdial.data.model.CodecQuality.Excellent
+                    name.contains("g729") -> com.ipdial.data.model.CodecQuality.Good
+                    name.contains("pcma") || name.contains("pcmu") -> com.ipdial.data.model.CodecQuality.Fair
+                    name.contains("gsm") -> com.ipdial.data.model.CodecQuality.Low
+                    else -> com.ipdial.data.model.CodecQuality.Minimal
+                }
+
+                var clockRate = 0L
+                var channelCount = 0L
+                var frameLength = 0L
+                try {
+                    val param = ep.codecGetParam(codecId)
+                    val info = param.info
+                    clockRate = info.clockRate
+                    channelCount = info.channelCnt
+                    frameLength = info.frameLen
+                } catch (_: Exception) {}
+
+                result.add(
+                    com.ipdial.data.model.CodecInfo(
+                        id = codecId,
+                        name = codecId,
+                        priority = priority,
+                        isAvailable = isAvailable,
+                        quality = quality,
+                        clockRate = clockRate.toInt(),
+                        channelCount = channelCount.toInt(),
+                        frameLength = frameLength.toInt()
+                    )
+                )
+            }
+            result
+        } catch (e: Exception) {
+            log("Error enumerating codecs: ${e.message}", true)
+            emptyList()
+        }
+    }
+
+    fun setCodecPriority(codecId: String, priority: Short) {
+        val ep = endpoint ?: return
+        try {
+            ep.codecSetPriority(codecId, priority)
+            log("Codec priority set: $codecId -> $priority")
+        } catch (e: Exception) {
+            log("Error setting codec priority: ${e.message}", true)
+        }
+    }
+
     fun destroy() {
         try {
             registerCurrentThread()
@@ -793,11 +897,12 @@ object SipEngine {
 
                             // Apply current mute/volume state
                             val currentSession = _callSession.value
-                            val txLevel = if (currentSession?.isMuted == true) 0f else VOLUME_BOOST_FACTOR
-                            val rxLevel = currentSession?.rxVolume ?: VOLUME_BOOST_FACTOR
+                            val micLevel = if (currentSession?.isMuted == true) 0f else VOLUME_BOOST_FACTOR
+                            val speakerLevel = currentSession?.rxVolume ?: VOLUME_BOOST_FACTOR
                             
-                            aud.adjustRxLevel(rxLevel)
-                            aud.adjustTxLevel(txLevel)
+                            // Tx = microphone (what remote hears), Rx = speaker (what local user hears)
+                            aud.adjustTxLevel(micLevel)
+                            aud.adjustRxLevel(speakerLevel)
 
                             aud.startTransmit(endpoint?.audDevManager()?.playbackDevMedia)
                             endpoint?.audDevManager()?.captureDevMedia?.startTransmit(aud)

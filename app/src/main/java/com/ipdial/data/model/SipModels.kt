@@ -16,7 +16,7 @@ data class SipAccount(
     val regStatus: RegStatus = RegStatus.UNREGISTERED,
     val regStatusText: String = "",
     // Audio quality settings
-    val codec: PreferredCodec = PreferredCodec.G729,
+    val codec: PreferredCodec = PreferredCodec.G711A,
     val ecEnabled: Boolean = true,   // Echo cancellation
     val nsEnabled: Boolean = true,   // Noise suppression
     val agcEnabled: Boolean = true,  // Auto gain control
@@ -86,5 +86,24 @@ enum class CallState {
 enum class KeypadDesign { Grid, Rounded }
 
 enum class ThemeMode { System, Light, Dark, Obsidian, Quartz }
+
+data class CodecInfo(
+    val id: String,
+    val name: String,
+    val priority: Short,
+    val isAvailable: Boolean,
+    val quality: CodecQuality,
+    val clockRate: Int,
+    val channelCount: Int,
+    val frameLength: Int,
+)
+
+enum class CodecQuality(val label: String, val level: Int) {
+   Excellent("Excellent", 5),
+    Good("Good", 4),
+    Fair("Fair", 3),
+    Low("Low", 2),
+    Minimal("Minimal", 1),
+}
 
 enum class AudioDeviceMode { EARPIECE, SPEAKER, BLUETOOTH }
