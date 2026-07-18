@@ -159,13 +159,14 @@ object SipEngine {
                         logConfig.writer = writer
 
                         medConfig.apply {
-                            clockRate = 16000        // High quality voice for codecs
-                            sndClockRate = 48000     // Android hardware-native rate (prevents resampling bugs)
+                            // [UPDATE]: HD Voice & Audio Optimization Settings
+                            clockRate = 48000        // Changed to 48kHz for True HD Wideband audio
+                            sndClockRate = 48000     // Match hardware-native rate to prevent resampling loss
                             
-                            ecOptions = 1            // Use driver's default EC (Hardware AEC on Android)
-                            ecTailLen = 200          // Standard tail
-                            noVad = true             // Don't cut off quiet voices
-                            quality = 5              // Good balance of quality/performance
+                            ecOptions = 3            // 3 = WebRTC Acoustic Echo Cancellation (Much better than default)
+                            ecTailLen = 250          // Increased tail length for stronger echo suppression
+                            noVad = true             // Keep true to prevent audio clipping on quiet voices
+                            quality = 10             // Maximized processing quality (1-10)
                             channelCount = 1
                             audioFramePtime = 20
                         }
@@ -201,7 +202,6 @@ object SipEngine {
                     log("#$callId: PJSIP started successfully")
 
                     // Explicitly switch to Java Audio (AudioRecord/AudioTrack)
-                    // This is more reliable on Xiaomi/Realme devices than Native OpenSL
                     try {
                         val adm = ep.audDevManager()
                         val devs = adm.enumDev2()
@@ -599,9 +599,6 @@ object SipEngine {
                 val codecId = codec.codecId
                 val name = codecId.lowercase()
 
-                // Only enable the EXACT target codec. 
-                // We don't even add fallbacks to keep packet as small as possible.
-                // SIP servers usually support PCMA/PCMU if everything else fails.
                 val priority: Short = when {
                     name.contains(targetCodecKeyword) -> 250
                     name == "pcma/8000/1" -> 150
@@ -883,7 +880,6 @@ object SipEngine {
                     return
                 }
 
-                // Note: Speaker routing is handled by SipService via observing callSession.isSpeaker
                 if (audioManager.mode != AudioManager.MODE_IN_COMMUNICATION) {
                     audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
                 }
@@ -895,12 +891,10 @@ object SipEngine {
                             mi.status == pjsua_call_media_status.PJSUA_CALL_MEDIA_ACTIVE) {
                             val aud = AudioMedia.typecastFromMedia(getMedia(mi.index.toLong()))
 
-                            // Apply current mute/volume state
                             val currentSession = _callSession.value
                             val micLevel = if (currentSession?.isMuted == true) 0f else VOLUME_BOOST_FACTOR
                             val speakerLevel = currentSession?.rxVolume ?: VOLUME_BOOST_FACTOR
                             
-                            // Tx = microphone (what remote hears), Rx = speaker (what local user hears)
                             aud.adjustTxLevel(micLevel)
                             aud.adjustRxLevel(speakerLevel)
 
@@ -923,13 +917,11 @@ object SipEngine {
     }
 
     private fun formatSipUri(destination: String, accountId: String? = null): String {
-        // If it's already a full SIP URI with a domain, just return it
         if (destination.startsWith("sip:") && destination.contains("@")) return destination
 
         val cleanDestination = destination.removePrefix("sip:").substringBefore("@")
         val number = cleanDestination
         
-        // Try to append the domain from the provided account or the active session
         val targetAccountId = accountId ?: _callSession.value?.accountId
         val domain = if (targetAccountId != null) accountConfigs[targetAccountId]?.domain else null
         
