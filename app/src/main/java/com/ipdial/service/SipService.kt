@@ -15,7 +15,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
 import android.os.IBinder
-import android.os.Looper
 import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -64,9 +63,6 @@ class SipService : Service() {
                 }
             }
             if (delayStartForeground) {
-                // Starting from background (e.g. BOOT_COMPLETED) — use regular startService
-                // to avoid BackgroundServiceStartNotAllowedException on Android 12+.
-                // The service will promote to foreground itself after a short delay.
                 context.startService(intent)
             } else {
                 try {
@@ -161,7 +157,6 @@ class SipService : Service() {
         createNotificationChannels()
         TelecomHelper.registerPhoneAccount(applicationContext)
         
-        // 0. Set the incoming call listener as early as possible
         SipEngine.onIncomingCall = { session -> 
             Log.d("SipService", "onIncomingCall lambda triggered for callId=${session.callId}")
             com.ipdial.util.SipLogger.log("SipService", "Incoming call received: ${session.remoteUri}")
@@ -171,7 +166,6 @@ class SipService : Service() {
                     Log.d("SipService", "DND enabled, hanging up callId=${session.callId}")
                     SipEngine.hangupCall(session.callId)
                 } else {
-                    // Resolve contact name or clean number
                     val displayName = session.remoteDisplayName
                     val cleanNum = session.remoteUri.replace("<", "").replace(">", "").removePrefix("sip:").substringBefore("@").substringBefore(";")
                     
@@ -194,25 +188,23 @@ class SipService : Service() {
                     val finalDisplayName = matchedContact?.name ?: cleanNum.ifBlank { displayName }
                     Log.d("SipService", "Final display name: $finalDisplayName")
                     
-                    // Update session display name for logging and UI consistency
                     SipEngine.updateCallSessionName(finalDisplayName)
                     
-                            withContext(Dispatchers.Main) {
-                                Log.d("SipService", "Reporting incoming call to Telecom and showing notification")
-                                TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
-                                showIncomingCallNotification(finalDisplayName, session.callId)
-                                
-                                // FORCE start activity as a fallback for some devices where Telecom might be silent
-                                try {
-                                    val intent = Intent(applicationContext, com.ipdial.MainActivity::class.java).apply {
-                                        action = "com.ipdial.ACTION_INCOMING_CALL"
-                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                                    }
-                                    applicationContext.startActivity(intent)
-                                } catch (e: Exception) {
-                                    Log.e("SipService", "Failed to force start MainActivity", e)
-                                }
+                    withContext(Dispatchers.Main) {
+                        Log.d("SipService", "Reporting incoming call to Telecom and showing notification")
+                        TelecomHelper.reportIncomingCall(applicationContext, session.remoteUri, finalDisplayName)
+                        showIncomingCallNotification(finalDisplayName, session.callId)
+                        
+                        try {
+                            val intent = Intent(applicationContext, com.ipdial.MainActivity::class.java).apply {
+                                action = "com.ipdial.ACTION_INCOMING_CALL"
+                                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                             }
+                            applicationContext.startActivity(intent)
+                        } catch (e: Exception) {
+                            Log.e("SipService", "Failed to force start MainActivity", e)
+                        }
+                    }
                 }
             }
         }
@@ -220,15 +212,10 @@ class SipService : Service() {
         startServiceForeground()
 
         scope.launch {
-            // 1. Initialize PJSIP on Main thread to avoid native crash (pj_thread_this)
             withContext(Dispatchers.Main) {
                 SipEngine.init(applicationContext)
             }
-            
-            // 3. Register accounts flow
             registerAccountsFromDataStore()
-
-            // 4. Register default network callback
             registerDefaultNetworkCallback()
         }
 
@@ -261,7 +248,6 @@ class SipService : Service() {
                         }
                         
                         if (shouldReconnect) {
-                            Log.d("SipService", "Default network active/changed (isInitial=$isInitial, wasOffline=$wasOffline, networkChanged=$networkChanged). Reconnecting...")
                             enabledAccounts.forEach { account ->
                                 repo.updateRegStatus(account.id, RegStatus.REGISTERING)
                             }
@@ -292,7 +278,6 @@ class SipService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Promote to foreground immediately to satisfy system requirements for startForegroundService
         startServiceForeground()
 
         when (intent?.action) {
@@ -301,7 +286,6 @@ class SipService : Service() {
                 SipEngine.answerCall(callId)
                 routeAudioToEarpiece()
                 cancelIncomingNotification()
-                // Launch MainActivity to show active call
                 val fullIntent = Intent(this, MainActivity::class.java).apply {
                     this.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                 }
@@ -334,8 +318,6 @@ class SipService : Service() {
                         val accountsList = repo.accounts.first()
                         val acc = accountsList.firstOrNull { it.isEnabled }
                         if (acc != null) {
-                            Log.d("SipService", "Test calling $number with account ${acc.id}")
-                            
                             val transportSuffix = when (acc.transport) {
                                 com.ipdial.data.model.Transport.TCP -> ";transport=tcp"
                                 com.ipdial.data.model.Transport.TLS -> ";transport=tls"
@@ -359,8 +341,6 @@ class SipService : Service() {
                                 }
                                 "sip:$num@$host$transportSuffix"
                             }
-                            
-                            Log.d("SipService", "Dialing URI: $finalUri")
                             
                             withContext(Dispatchers.Main) {
                                 SipEngine.makeCall(acc.id, finalUri)
@@ -413,17 +393,15 @@ class SipService : Service() {
                 }
             }
         }
-        // Observe registration events to update DataStore
         scope.launch {
             SipEngine.registrationEvents.collect { (accountId, status) ->
                 repo.updateRegStatus(accountId, status)
             }
         }
 
-        // Keep-alive loop to ensure registrations stay active for incoming calls
         scope.launch {
             while (true) {
-                delay(120_000) // Every 2 minutes
+                delay(120_000)
                 try {
                     val accounts = repo.accounts.first()
                     accounts.forEach { account ->
@@ -441,7 +419,6 @@ class SipService : Service() {
 
     private var lastWasConfirmed = false
     private var callStartTime = 0L
-
     private var lastSession: com.ipdial.data.model.CallSession? = null
     
     private var ringtone: Ringtone? = null
@@ -457,7 +434,6 @@ class SipService : Service() {
                 val vibrateEnabled = repo.globalVibrate.first()
                 
                 withContext(Dispatchers.Main) {
-                    // Check again on main thread to avoid races
                     if (ringtone?.isPlaying == true || mediaPlayer?.isPlaying == true) {
                         return@withContext
                     }
@@ -471,7 +447,6 @@ class SipService : Service() {
                             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
                         
                         try {
-                            // Try MediaPlayer for guaranteed looping on all versions
                             val mp = android.media.MediaPlayer()
                             mp.setDataSource(applicationContext, ringtoneUri)
                             mp.setAudioAttributes(
@@ -485,7 +460,6 @@ class SipService : Service() {
                             mp.start()
                             mediaPlayer = mp
                         } catch (e: Exception) {
-                            Log.e("SipService", "MediaPlayer failed for ringtone, falling back to RingtoneManager", e)
                             ringtone = RingtoneManager.getRingtone(applicationContext, ringtoneUri)
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
                                 ringtone?.isLooping = true
@@ -499,7 +473,6 @@ class SipService : Service() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e("SipService", "Failed to play ringtone", e)
                 isPlayingRingtone = false
             }
         }
@@ -532,6 +505,10 @@ class SipService : Service() {
 
     private fun routeAudioToDefault() {
         requestAudioFocus()
+        
+        // [UPDATE]: Force unmute microphone on default routing to prevent OS level hardware mute
+        audioManager.isMicrophoneMute = false
+        
         val session = SipEngine.callSession.value ?: return
         if (session.isSpeaker) {
             routeAudioToSpeaker(true)
@@ -558,7 +535,6 @@ class SipService : Service() {
                             durationSeconds = duration,
                             missed = !lastWasConfirmed && sessionToLog.direction == CallDirection.INCOMING
                         )
-                        // Use a separate scope to ensure insertion completes
                         CoroutineScope(Dispatchers.IO).launch {
                             com.ipdial.data.repository.CallLogRepository.getInstance(applicationContext).insert(entry)
                         }
@@ -584,7 +560,6 @@ class SipService : Service() {
                             playRingtone()
                             acquireWakeLockForIncoming()
                             updateForegroundType(ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
-                            // If user toggled speaker while ringing, apply it (though sound is usually just ringtone)
                             if (speakerChanged) {
                                 routeAudioToSpeaker(session.isSpeaker)
                             }
@@ -593,10 +568,7 @@ class SipService : Service() {
                             stopRingtone()
                             cancelIncomingNotification()
                             
-                            // Always route audio when state becomes CONFIRMED, 
-                            // or if speaker was toggled during the call
                             if (stateChanged || speakerChanged) {
-                                // Small delay to let Telecom session stabilize if just confirmed
                                 if (stateChanged) delay(300) 
                                 routeAudioToDefault()
                             }
@@ -628,7 +600,6 @@ class SipService : Service() {
         
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             try {
-                // Try phoneCall type first as it's the primary purpose
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     androidx.core.app.ServiceCompat.startForeground(
                         this,
@@ -639,11 +610,7 @@ class SipService : Service() {
                 } else {
                     startForeground(NOTIF_ID_SERVICE, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
                 }
-                Log.d("SipService", "Started FGS with type phoneCall")
             } catch (e: Exception) {
-                Log.w("SipService", "Failed to start FGS with type phoneCall, trying fallback: ${e.message}")
-                
-                // Fallback to dataSync if phoneCall is not allowed (common on some background starts)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     try {
                         androidx.core.app.ServiceCompat.startForeground(
@@ -652,22 +619,15 @@ class SipService : Service() {
                             notification,
                             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                         )
-                        Log.d("SipService", "Started FGS with type dataSync fallback")
                     } catch (ex: Exception) {
-                        Log.e("SipService", "Failed to start FGS with dataSync fallback", ex)
-                        // Absolute fallback: no type
                         try {
                             startForeground(NOTIF_ID_SERVICE, notification)
-                        } catch (lastEx: Exception) {
-                            Log.e("SipService", "Final FGS attempt failed", lastEx)
-                        }
+                        } catch (lastEx: Exception) {}
                     }
                 } else {
                     try {
                         startForeground(NOTIF_ID_SERVICE, notification)
-                    } catch (lastEx: Exception) {
-                        Log.e("SipService", "Absolute FGS failure", lastEx)
-                    }
+                    } catch (lastEx: Exception) {}
                 }
             }
         } else {
@@ -702,6 +662,10 @@ class SipService : Service() {
             connection?.setAudioRoute(android.telecom.CallAudioState.ROUTE_EARPIECE)
         }
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        
+        // [UPDATE] Force Unmute
+        audioManager.isMicrophoneMute = false
+        
         @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -717,11 +681,14 @@ class SipService : Service() {
                 val route = if (on) android.telecom.CallAudioState.ROUTE_SPEAKER else android.telecom.CallAudioState.ROUTE_EARPIECE
                 @Suppress("DEPRECATION")
                 connection.setAudioRoute(route)
-                Log.d("SipService", "Routed audio via Telecom Connection to speaker=$on")
             }
         }
 
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        
+        // [UPDATE] Force Unmute
+        audioManager.isMicrophoneMute = false
+        
         @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = on
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -729,14 +696,10 @@ class SipService : Service() {
                 val devices = audioManager.availableCommunicationDevices
                 val speakerDevice = devices.find { it.type == android.media.AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
                 if (speakerDevice != null) {
-                    val res = audioManager.setCommunicationDevice(speakerDevice)
-                    Log.d("SipService", "setCommunicationDevice speaker: $res")
-                } else {
-                    Log.e("SipService", "Built-in speaker device not found")
+                    audioManager.setCommunicationDevice(speakerDevice)
                 }
             } else {
                 audioManager.clearCommunicationDevice()
-                Log.d("SipService", "clearCommunicationDevice")
             }
         }
     }
@@ -747,9 +710,12 @@ class SipService : Service() {
             val connection = SipConnectionService.getConnection(session.callId)
             @Suppress("DEPRECATION")
             connection?.setAudioRoute(android.telecom.CallAudioState.ROUTE_BLUETOOTH)
-            Log.d("SipService", "Routed audio via Telecom Connection to Bluetooth")
         }
         audioManager.mode = AudioManager.MODE_IN_COMMUNICATION
+        
+        // [UPDATE] Force Unmute
+        audioManager.isMicrophoneMute = false
+        
         @Suppress("DEPRECATION")
         audioManager.isSpeakerphoneOn = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -759,10 +725,7 @@ class SipService : Service() {
                         it.type == android.media.AudioDeviceInfo.TYPE_BLUETOOTH_A2DP
             }
             if (btDevice != null) {
-                val res = audioManager.setCommunicationDevice(btDevice)
-                Log.d("SipService", "setCommunicationDevice Bluetooth: $res")
-            } else {
-                Log.e("SipService", "Bluetooth device not found in available devices")
+                audioManager.setCommunicationDevice(btDevice)
             }
         } else {
             @Suppress("DEPRECATION")
@@ -771,8 +734,6 @@ class SipService : Service() {
             audioManager.isBluetoothScoOn = true
         }
     }
-
-
 
     private fun requestAudioFocus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -819,9 +780,7 @@ class SipService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 audioManager.clearCommunicationDevice()
-            } catch (e: Exception) {
-                Log.e("SipService", "Failed to clear communication device", e)
-            }
+            } catch (e: Exception) {}
         }
     }
 
@@ -829,7 +788,6 @@ class SipService : Service() {
         if (wakeLock?.isHeld == true) return
         val pm = getSystemService(POWER_SERVICE) as PowerManager
         
-        // Proximity sensor to turn off screen when near ear
         wakeLock = pm.newWakeLock(
             PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK,
             "IPDial:call"
@@ -838,7 +796,6 @@ class SipService : Service() {
             acquire(60 * 60 * 1000L) 
         }
 
-        // Partial wake lock to keep CPU alive during call even if screen is off
         if (cpuWakeLock == null) {
             cpuWakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "IPDial:cpu_call").apply {
                 setReferenceCounted(false)
@@ -855,10 +812,8 @@ class SipService : Service() {
                 PowerManager.FULL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP or PowerManager.ON_AFTER_RELEASE,
                 "IPDial:incoming_call_wake"
             )
-            wl.acquire(10000L) // 10 seconds should be enough to show UI
-        } catch (e: Exception) {
-            Log.e("SipService", "Failed to acquire incoming wake lock", e)
-        }
+            wl.acquire(10000L) 
+        } catch (e: Exception) {}
     }
 
     private fun releaseWakeLock() {
